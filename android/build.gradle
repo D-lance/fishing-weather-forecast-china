@@ -1,0 +1,4 @@
+// 顶层构建文件：只声明 Android Gradle 插件版本（与本机缓存一致：AGP 8.2.1 + Gradle 8.2.1）
+plugins {
+    id 'com.android.application' version '8.2.1' apply false
+}

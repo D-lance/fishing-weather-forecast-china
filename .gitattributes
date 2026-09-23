@@ -1,0 +1,5 @@
+# 统一用 LF 存储；gradlew 在 Linux/macOS 上必须是 LF，gradlew.bat 必须是 CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jar binary

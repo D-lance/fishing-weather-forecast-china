@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 默认（非中文系统）用英文名；中文系统见 values-zh/ -->
+    <string name="app_name">Fishing Weather Forecast · Bite Index</string>
+    <string name="launcher_name">Fishing Forecast</string>
+    <string name="share_title">Share this fishing spot</string>
+    <string name="no_browser">No browser found to open the link</string>
+</resources>

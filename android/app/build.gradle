@@ -1,0 +1,119 @@
+// 今日鱼情 安卓 App：原生 WebView 壳，页面来自仓库根目录 site/（由 tools/build.mjs 生成），
+// 构建时自动先跑一遍网页构建，再把 site/ 拷进 APK 的 assets/site/。
+plugins {
+    id 'com.android.application'
+}
+
+// ───────── 签名配置：从环境变量或 ~/.fishcast-release/signing.properties 读取，绝不写进仓库 ─────────
+// signing.properties 内容示例：
+//   storeFile=C:/Users/you/.fishcast-release/release.jks
+//   storePassword=...
+//   keyAlias=fishcast
+//   keyPassword=...
+// 也可以用环境变量 FISHCAST_STORE_FILE / FISHCAST_STORE_PASSWORD / FISHCAST_KEY_ALIAS / FISHCAST_KEY_PASSWORD。
+def signingProps = new Properties()
+def signingFile = new File(System.getProperty('user.home'), '.fishcast-release/signing.properties')
+if (signingFile.isFile()) signingFile.withInputStream { signingProps.load(it) }
+def sign = { String envKey, String propKey -> System.getenv(envKey) ?: signingProps.getProperty(propKey) }
+def storeFilePath = sign('FISHCAST_STORE_FILE', 'storeFile')
+def hasReleaseSigning = storeFilePath != null && new File(storeFilePath).isFile()
+
+// ───────── 网页资源：仓库根目录 site/ → build/generated/siteAssets/site/ ─────────
+def repoRoot = rootProject.projectDir.parentFile
+def siteDir = new File(repoRoot, 'site')
+def generatedAssets = layout.buildDirectory.dir('generated/siteAssets')
+
+// 先跑 node tools/build.mjs 生成最新 site/（加 -PskipWebBuild 可跳过，直接用现成的 site/）
+tasks.register('buildWeb', Exec) {
+    description = '运行 node tools/build.mjs 生成 site/'
+    workingDir repoRoot
+    commandLine 'node', 'tools/build.mjs'
+    // build.mjs 在英文页有漏翻时返回 2（仅警告），不当作失败
+    ignoreExitValue true
+    onlyIf { !project.hasProperty('skipWebBuild') }
+    doLast {
+        def code = executionResult.get().exitValue
+        if (code != 0 && code != 2) throw new GradleException("网页构建失败，退出码 ${code}")
+    }
+}
+
+tasks.register('syncSiteAssets', Sync) {
+    description = '把 site/ 拷进 APK assets/site/'
+    dependsOn 'buildWeb'
+    from(siteDir) {
+        // IndexNow 密钥文件只对网站有用，App 里不需要
+        exclude '*.txt', 'assets/*.txt', 'sitemap.xml'
+    }
+    into generatedAssets.map { it.dir('site') }
+    doFirst {
+        if (!new File(siteDir, 'index.html').isFile()) {
+            throw new GradleException("找不到 ${siteDir}/index.html，请先在仓库根目录运行 node tools/build.mjs")
+        }
+    }
+}
+
+android {
+    namespace 'com.satloot.fish'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.satloot.fish'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        // 只保留中文、英文两套界面文字
+        resourceConfigurations += ['zh', 'en']
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(storeFilePath)
+                storePassword sign('FISHCAST_STORE_PASSWORD', 'storePassword')
+                keyAlias sign('FISHCAST_KEY_ALIAS', 'keyAlias') ?: 'fishcast'
+                keyPassword sign('FISHCAST_KEY_PASSWORD', 'keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += generatedAssets
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+// 任何构建开始前先同步网页资源
+tasks.named('preBuild') { dependsOn 'syncSiteAssets' }
+
+if (!hasReleaseSigning) {
+    gradle.taskGraph.whenReady { graph ->
+        if (graph.allTasks.any { it.name.contains('Release') }) {
+            logger.warn('没找到签名配置（~/.fishcast-release/signing.properties 或 FISHCAST_* 环境变量），release APK 将是未签名的。')
+        }
+    }
+}
+
+dependencies {
+    // 只依赖 androidx.webkit，用它的 WebViewAssetLoader 以 https://appassets.androidplatform.net/ 加载本地页面
+    implementation 'androidx.webkit:webkit:1.9.0'
+}

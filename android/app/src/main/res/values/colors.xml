@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与网页一致：浅暖灰底 + 湖水青 -->
+    <color name="page_bg">#F7F6F3</color>
+    <color name="brand">#0F766E</color>
+    <color name="ic_launcher_background">#0F766E</color>
+</resources>

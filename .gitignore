@@ -1,0 +1,27 @@
+# 部署脚本和服务器配置（含服务器信息，不开源）
+deploy/
+# 本机 Claude 配置
+.claude/
+# 网页构建产物（node tools/build.mjs 生成）
+site/
+# Node
+node_modules/
+# 安卓构建产物与本机配置
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+# 签名文件与密码，绝不进仓库
+*.jks
+*.keystore
+signing.properties
+keystore.txt
+# 截图临时文件（README 用的截图在 docs/screenshots/，要提交）
+*.tmp.png
+raw-*.png
+screencap*.png
+# 系统杂项
+.DS_Store
+Thumbs.db

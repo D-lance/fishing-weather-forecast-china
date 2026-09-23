@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>钓鱼天气预报_今日鱼情查询_出钓指数（江河湖海水库·野钓路亚海钓）- 今日鱼情</title>
+  <meta name="description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来7天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
+  <meta name="keywords" content="钓鱼天气,鱼情,钓鱼指数,出钓指数,野钓,路亚,海钓,潮汐,水库钓鱼,江河钓鱼,钓鱼天气预报,今日鱼情">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="今日鱼情">
+  <meta property="og:title" content="钓鱼天气预报_今日鱼情查询_出钓指数（江河湖海水库·野钓路亚海钓）- 今日鱼情">
+  <meta property="og:description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来7天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
+  <meta property="og:image" content="https://fish.satloot.com/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="今日鱼情：钓鱼天气预报与未来 7 天出钓指数">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="钓鱼天气预报_今日鱼情查询_出钓指数（江河湖海水库·野钓路亚海钓）- 今日鱼情">
+  <meta name="twitter:description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来7天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
+  <meta name="twitter:image" content="https://fish.satloot.com/assets/og.png">
+  <meta name="theme-color" content="#f7f6f3">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/assets/logo-192.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Cpath d='M5 16c4-6.5 12-6.5 16.5 0C17 22.5 9 22.5 5 16z' fill='%23fff'/%3E%3Cpath d='M21 16l6-5v10z' fill='%23fff'/%3E%3Ccircle cx='10' cy='15' r='1.4' fill='%230f766e'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f6f3;
+      --surface: #ffffff;
+      --ink: #1c1917;
+      --body: #292524;
+      --muted: #78716c;
+      --line: #e7e5e4;
+      --line-soft: #f2f0ec;
+      --brand: #0f766e;
+      --brand-deep: #115e59;
+      --brand-soft: #e6f4f1;
+      --lv0: #15803d;
+      --lv1: #4d7c0f;
+      --lv2: #b45309;
+      --lv3: #c2410c;
+      --lv4: #b91c1c;
+      --danger: #b91c1c;
+      --danger-soft: #fef2f2;
+      --warn-soft: #fff7e6;
+      --shadow: 0 1px 2px rgba(28, 25, 23, .05), 0 4px 14px rgba(28, 25, 23, .04);
+      --sans: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--body); font: 15px/1.6 var(--sans); overflow-x: hidden; }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    [hidden] { display: none !important; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+    h1, h2, h3 { color: var(--ink); line-height: 1.3; }
+    h2 { font-size: 19px; margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; }
+
+    /* 顶栏 */
+    .top { position: sticky; top: 0; z-index: 1000; background: rgba(255,255,255,.9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+    .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 54px; gap: 12px; }
+    .brand { font-weight: 700; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; font-size: 16px; }
+    .brand:hover { text-decoration: none; }
+    .brand svg { width: 24px; height: 24px; display: block; }
+    .top nav { display: flex; gap: 4px; align-items: center; }
+    .top nav a { color: var(--body); padding: 6px 10px; border-radius: 8px; font-size: 14px; }
+    .top nav a:hover { background: var(--line-soft); text-decoration: none; }
+    .top nav .lang-switch { border: 1px solid var(--line); font-weight: 600; }
+
+    .hero { padding: 26px 0 6px; }
+    .hero h1 { font-size: 28px; margin: 0; }
+    .hero .lead { margin: 8px 0 0; color: var(--muted); max-width: 720px; }
+
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+    .panel { margin-top: 16px; }
+
+    /* 选地点 */
+    .search { display: flex; gap: 8px; }
+    .search input { flex: 1; min-width: 0; }
+    input[type=search], select { font: inherit; font-size: 16px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; height: 42px; }
+    input[type=search]:focus, select:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+    select { width: 100%; }
+    button { font: inherit; font-size: 15px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 0 14px; height: 42px; cursor: pointer; white-space: nowrap; }
+    button:hover { background: var(--line-soft); }
+    button.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+    button.primary:hover { background: var(--brand-deep); }
+    button:disabled { opacity: .55; cursor: default; }
+    .row-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .row-btns button { flex: 1 1 140px; }
+    .results { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .results li { border-top: 1px solid var(--line); }
+    .results li:first-child { border-top: 0; }
+    .results button { width: 100%; text-align: left; border: 0; border-radius: 0; height: auto; padding: 10px 12px; white-space: normal; display: block; }
+    .results .sub { color: var(--muted); font-size: 13px; }
+    .recent { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+    .recent button { height: 30px; font-size: 13px; padding: 0 10px; border-radius: 15px; background: var(--line-soft); border-color: transparent; }
+    .results .grp { display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--line-soft); }
+    .results .grp i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .results .nm { font-weight: 600; color: var(--ink); }
+    .kchip { display: inline-block; font-size: 11px; line-height: 1.6; color: #fff; border-radius: 4px; padding: 0 6px; margin-right: 6px; vertical-align: 1px; font-weight: 600; }
+    .hint { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+    .map-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .bm-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .bm-switch button { height: 30px; font-size: 13px; border: 0; border-radius: 0; padding: 0 10px; }
+    .bm-switch button[aria-pressed=true] { background: var(--brand); color: #fff; }
+    #nearby { margin-top: 10px; }
+    #nearby p { margin: 0 0 6px; }
+    .near-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .near-list button { height: auto; min-height: 34px; padding: 4px 10px; font-size: 14px; white-space: normal; text-align: left; }
+    .near-list .use-point { background: var(--line-soft); }
+    .leaflet-container { font: inherit; }
+    #map { height: 320px; border-radius: 10px; margin-top: 10px; border: 1px solid var(--line); }
+    .map-note { margin: 6px 0 0; }
+    .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+    .opts label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    .status { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 1.6em; }
+    .status.err { color: var(--danger); }
+
+    /* 地点行 */
+    .place { display: flex; align-items: baseline; gap: 8px 14px; flex-wrap: wrap; margin-top: 18px; }
+    .place h2 { margin: 0; font-size: 22px; word-break: break-all; }
+    .place .meta { color: var(--muted); font-size: 13px; }
+    .share { font-size: 13px; }
+
+    /* 安全警告 */
+    .alert-box { margin-top: 14px; border: 1px solid #fecaca; background: var(--danger-soft); color: #7f1d1d; border-radius: 12px; padding: 12px 14px; }
+    .alert-box strong { color: var(--danger); display: block; margin-bottom: 4px; font-size: 16px; }
+    .alert-box ul { margin: 0; padding-left: 18px; }
+    .alert-box li { margin: 2px 0; }
+
+    /* 7 天卡片 */
+    .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    .day { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 8px 10px; text-align: center; cursor: pointer; box-shadow: var(--shadow); height: auto; white-space: normal; display: block; width: 100%; }
+    .day:hover { background: #fcfbf9; }
+    .day[aria-pressed=true] { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft), var(--shadow); }
+    .day .dname { font-size: 13px; color: var(--muted); }
+    .day .score { font: 700 30px/1.15 var(--sans); margin: 4px 0 2px; }
+    .day .lv { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; color: #fff; }
+    .day .wt, .day .win { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .day .win { color: var(--body); }
+    .day .flag { margin-top: 4px; font-size: 12px; color: var(--danger); font-weight: 600; }
+    .day .flag.cap { background: var(--danger-soft); border-radius: 6px; padding: 1px 4px; }
+    .c0 { color: var(--lv0); } .c1 { color: var(--lv1); } .c2 { color: var(--lv2); } .c3 { color: var(--lv3); } .c4 { color: var(--lv4); }
+    .b0 { background: var(--lv0); } .b1 { background: var(--lv1); } .b2 { background: var(--lv2); } .b3 { background: var(--lv3); } .b4 { background: var(--lv4); }
+
+    /* 当日详情 */
+    .detail { margin-top: 16px; }
+    .dhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .dhead .big { font: 700 36px/1 var(--sans); }
+    .dhead .lv { font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 10px; color: #fff; }
+    .lvdesc { font-size: 14px; color: var(--body); }
+    .dmeta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .wins { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .wins span { background: var(--brand-soft); color: var(--brand-deep); border-radius: 8px; padding: 4px 10px; font-size: 14px; font-weight: 600; }
+    .chart-box { position: relative; margin-top: 14px; }
+    canvas#chart { width: 100%; height: 220px; display: block; touch-action: pan-y; }
+    .legend { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+    .tip { font-size: 13px; color: var(--body); min-height: 1.6em; margin-top: 4px; font-family: var(--mono); }
+    .cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-top: 16px; }
+    .subs { display: grid; gap: 10px; }
+    .sub-row .top-line { display: flex; justify-content: space-between; font-size: 14px; }
+    .sub-row .top-line b { color: var(--ink); }
+    .bar { height: 8px; background: var(--line-soft); border-radius: 4px; overflow: hidden; margin: 4px 0 2px; }
+    .bar i { display: block; height: 100%; border-radius: 4px; }
+    .sub-row .why { font-size: 13px; color: var(--muted); }
+    .list { margin: 0; padding-left: 18px; }
+    .list li { margin: 4px 0; }
+    .safety-list li { color: var(--danger); }
+    .ice-note { background: var(--warn-soft); border: 1px solid #f3dfb5; border-radius: 10px; padding: 8px 12px; font-size: 14px; color: #8a5a10; margin-top: 10px; }
+
+    .empty { text-align: center; color: var(--muted); padding: 30px 10px; }
+    .loading { text-align: center; color: var(--muted); padding: 30px 10px; }
+
+    /* 说明 */
+    #notes { margin-top: 28px; }
+    .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .note h3 { font-size: 16px; margin: 0 0 6px; }
+    .note ul { margin: 0; padding-left: 18px; }
+    .note li { margin: 4px 0; font-size: 14px; }
+    .caveat { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--warn-soft); border: 1px solid #f3dfb5; color: #7c4a03; font-size: 14px; }
+
+    footer { margin: 36px 0 30px; border-top: 1px solid var(--line); padding-top: 20px; font-size: 13px; color: var(--muted); }
+    .foot-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+    .foot-links a { color: var(--body); }
+    footer p { margin: 6px 0; }
+
+    @media (max-width: 860px) {
+      .days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .cols, .notes { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .days { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .opts { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 24px; }
+      .top nav a.hide-sm { display: none; }
+      .day .score { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0f766e"/><path d="M5 16c4-6.5 12-6.5 16.5 0C17 22.5 9 22.5 5 16z" fill="#fff"/><path d="M21 16l6-5v10z" fill="#fff"/><circle cx="10" cy="15" r="1.4" fill="#0f766e"/></svg>今日鱼情</a>
+      <nav>
+        <a class="hide-sm" href="#forecast">7 天预报</a>
+        <a href="#notes">出钓指数说明</a>
+        <a class="lang-switch" href="/en/" hreflang="en" lang="en" data-nolang>EN</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>钓鱼天气预报 · 鱼情分析 · 出钓指数</h1>
+      <p class="lead">按天气和地理给钓友出未来 7 天的出钓指数、最佳钓鱼时间、钓位水层饵料建议和安全提示。江、河、湖、海、水库都能搜，也可以在地图上直接点水面。</p>
+    </section>
+
+    <section class="card panel" id="pick">
+      <form class="search" id="search-form" autocomplete="off">
+        <input type="search" id="q" placeholder="搜江河湖海水库或地名，如：汉江、千岛湖、象山港" aria-label="江河湖海水库或地名">
+        <button type="submit" class="primary" id="search-btn">搜索</button>
+      </form>
+      <p class="hint">搜水体名（江、河、湖、水库、海湾）比搜城市更准；长河会让你在地图上点选河段。</p>
+      <ul class="results" id="results" hidden></ul>
+      <div class="row-btns">
+        <button type="button" id="gps-btn">用我的位置</button>
+        <button type="button" id="map-btn">地图选点</button>
+      </div>
+      <div id="map-wrap" hidden>
+        <div id="map"></div>
+        <div class="map-bar">
+          <span class="small muted" id="map-attr">底图 © 高德地图</span>
+          <span class="bm-switch" role="group" aria-label="底图"><button type="button" data-bm="amap" aria-pressed="true">高德底图</button><button type="button" data-bm="osm" aria-pressed="false">OpenStreetMap</button></span>
+        </div>
+        <p class="map-note small muted">点水面就按那里出预报，还会列出附近有名字的江河湖库供你选；选中的水面会高亮，点在它附近会自动挪到水面上。</p>
+        <div id="nearby" hidden></div>
+      </div>
+      <div class="recent" id="recent" hidden></div>
+      <div class="opts">
+        <div>
+          <label for="sp">目标鱼种</label>
+          <select id="sp"></select>
+        </div>
+        <div>
+          <label for="w">水域类型</label>
+          <select id="w"></select>
+        </div>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section id="forecast">
+      <div id="empty" class="empty">先选一个钓点，就能看到未来 7 天的鱼情。</div>
+      <div id="loading" class="loading" hidden>正在拉天气数据…</div>
+      <div id="result" hidden>
+        <div class="place">
+          <h2 id="place-name">—</h2>
+          <span class="meta" id="place-meta"></span>
+          <a class="share" id="share-link" href="#">复制分享链接</a>
+        </div>
+        <div class="alert-box" id="alert-box" hidden>
+          <strong id="alert-title">安全警告</strong>
+          <ul id="alert-list"></ul>
+        </div>
+        <div class="days" id="days"></div>
+
+        <div class="card detail" id="detail">
+          <div class="dhead">
+            <h2 id="d-title" style="margin:0">—</h2>
+            <span class="big" id="d-score">—</span>
+            <span class="lv" id="d-level"></span>
+            <span class="lvdesc" id="d-lvdesc"></span>
+          </div>
+          <div class="dmeta" id="d-meta"></div>
+          <div class="wins" id="d-wins"></div>
+          <div class="chart-box">
+            <canvas id="chart" aria-label="小时评分曲线"></canvas>
+            <div class="legend">
+              <span><i style="background:#0f766e"></i>前后三小时平均</span>
+              <span><i style="background:#a8a29e;height:2px;vertical-align:3px"></i>每小时</span>
+              <span><i style="background:rgba(21,128,61,.18)"></i>最佳时段</span>
+              <span><i style="background:rgba(220,38,38,.18)"></i>雷暴 / 大风 / 大浪</span>
+              <span><i style="background:#d97706;width:2px"></i>日出 / 日落</span>
+            </div>
+            <div class="tip" id="tip"></div>
+          </div>
+          <div class="cols">
+            <div>
+              <h3>八项打分（当天最好的那个小时）</h3>
+              <div class="subs" id="d-subs"></div>
+            </div>
+            <div>
+              <h3>建议</h3>
+              <ul class="list" id="d-advice"></ul>
+              <div id="d-safety-wrap" hidden>
+                <h3>安全提示</h3>
+                <ul class="list safety-list" id="d-safety"></ul>
+              </div>
+              <div class="ice-note" id="d-ice" hidden>估算水温接近冰点，又连着几天严寒，可能结冰：冰钓先测冰厚，冰厚不到 10 厘米不上冰，结伴出行。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="notes">
+      <h2>出钓指数怎么算的</h2>
+      <div class="notes">
+        <div class="card note">
+          <h3>钓鱼天气怎么变成出钓指数？</h3>
+          <ul>
+            <li>每小时按八个分项加权打 0–100 分：水温 25、气压 20、温变 15、风 10、天空 10、时段 10、月相/潮 5、水域 5。</li>
+            <li>每小时的分数取前后三小时平均；当天出钓指数 = 最好 6 个小时的平均占六成，全天平均占四成，既看挑对时间能有多好，也看这一天整体怎么样。</li>
+            <li>有雷暴、大风或大浪的日子，出钓指数最多给 60 分；雷暴或大浪持续 3 小时以上最多 45 分，卡片上会标出原因。</li>
+            <li>80 分以上极佳：挑对时段去，大概率连竿；65–79 好：有鱼口；50–64 一般：能钓，口不会太好；35–49 偏差：难钓，只挑最佳时段；35 以下不建议：天气不好或不安全。</li>
+          </ul>
+        </div>
+        <div class="card note">
+          <h3>鱼情里的水温是估的吗？</h3>
+          <ul>
+            <li>是估的。江河湖库按最近 5 天的气温推算（越近的天算得越重），海边用海水表层温度。</li>
+            <li>水温在所选鱼种最舒服的范围里得满分，差得越远分越低。</li>
+          </ul>
+        </div>
+        <div class="card note">
+          <h3>最佳钓鱼时间怎么挑？</h3>
+          <ul>
+            <li>先找当天分数最高的那个小时，前后各一小时就是一个最佳时段；再往下挑，最多 3 段，太差的不列。</li>
+            <li>日出日落前后、月亮时段（月亮正当头、在脚下、刚升起、刚落下）有加分；天热时夜里 22 点到凌晨 2 点也算进来，方便夜钓。</li>
+          </ul>
+        </div>
+        <div class="card note">
+          <h3>海钓看潮汐，江河钓鱼、水库钓鱼有什么区别？</h3>
+          <ul>
+            <li>海钓：选海湾或海边时会自动看潮位、浪高和海水温度，刚涨潮、刚落潮水流起来时加分，平潮前后减分，浪高 1.5 米以上扣分。</li>
+            <li>江河钓鱼：近两天下雨超过 30 毫米就当涨水浑浊，建议找回水湾、缓流区、桥墩下游；长河要在地图上点你去的那一段。</li>
+            <li>水库钓鱼：高温季深水区凉快更有利，建议找回水湾、岬角、老河道。</li>
+          </ul>
+        </div>
+        <div class="card note">
+          <h3>野钓、路亚都能用吗？</h3>
+          <ul>
+            <li>能。选鲫鱼、鲤鱼、草鱼等给饵料味型建议；选翘嘴、鲈鱼、黑鱼、鳜鱼、海鲈等路亚鱼种给饵型建议。</li>
+            <li>鱼种决定最舒服的水温：水温太低或太高，鱼不爱动，整体打折；冬天冰钓鲫鱼打折少一些。</li>
+          </ul>
+        </div>
+        <div class="card note">
+          <h3>数据从哪来？</h3>
+          <ul>
+            <li>天气、海浪和潮位来自公开的气象数据；江河湖库的位置和类型来自开放地图数据；底图可以选高德地图或 OpenStreetMap。</li>
+            <li>日出日落和月亮时段都在你的手机或电脑上算，本站没有服务器收数据，也不记录你的位置。</li>
+            <li>自动认出的水域类型不一定准，可以手动改；认不出来时按一般水体算。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="caveat">按天气和经验估算，不保证有鱼；出发前查当地禁渔期。长江流域重点水域十年禁渔，各地休渔期与禁钓区以当地公告为准。雷雨天远离水边，别在高压线下甩竿。</div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div class="foot-links">
+        <a href="https://satloot.com/" rel="noopener">satloot 项目总览</a>
+        <a href="https://sim.satloot.com/" rel="noopener">合约模拟器</a>
+        <a href="https://bnbbang.com/" rel="noopener">BNBBANG 镜像宇宙</a>
+        <a href="https://bang.satloot.com/" rel="noopener">BTCBANG 比特宇宙</a>
+        <a href="https://earn.satloot.com/" rel="noopener">riskdesk 风控面板</a>
+        <a href="https://airdrop.satloot.com/" rel="noopener">空投雷达</a>
+        <a href="https://game.satloot.com/" rel="noopener">satloot 游戏厅</a>
+        <a href="https://tool.satloot.com/" rel="noopener">satloot 工具站</a>
+        <a href="https://faucet.satloot.com/" rel="noopener">比特币测试网水龙头</a>
+        <a href="https://trx.satloot.com/" rel="noopener">TRX 质押收益计算器</a>
+        <a href="https://skill.satloot.com/" rel="noopener">WorkBuddy 技能</a>
+      </div>
+      <p>按天气和经验估算，不保证有鱼；出发前查当地禁渔期（长江十年禁渔，各地休渔期以当地公告为准）。</p>
+      <p class="small">天气数据：<a href="https://open-meteo.com/" rel="noopener">Open-Meteo</a>，地图：高德 / <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> 贡献者</p>
+    </div>
+  </footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

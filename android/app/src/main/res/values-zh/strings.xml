@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 完整应用名：带搜索词，显示在应用详情、设置、应用商店 -->
+    <string name="app_name">钓鱼天气预报·今日鱼情</string>
+    <!-- 桌面图标下的短名（长名在桌面会被截断） -->
+    <string name="launcher_name">今日鱼情</string>
+    <string name="share_title">分享这片水域的鱼情</string>
+    <string name="no_browser">没有找到能打开链接的浏览器</string>
+</resources>
