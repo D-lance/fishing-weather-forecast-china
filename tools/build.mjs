@@ -196,6 +196,7 @@ en = jsonld(en, 'en');
 
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(path.join(DIST, 'en'), { recursive: true });
+fs.copyFileSync(path.join(ROOT, 'web', 'llms.txt'), path.join(DIST, 'llms.txt'));
 fs.writeFileSync(path.join(DIST, 'index.html'), zh);
 fs.writeFileSync(path.join(DIST, 'en', 'index.html'), en);
 fs.writeFileSync(path.join(DIST, 'app.js'), APP);

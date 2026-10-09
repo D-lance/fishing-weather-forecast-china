@@ -1,0 +1,15 @@
+# SatLoot 钓鱼天气预报与鱼情查询
+
+> 在地图选择江河、湖泊、水库或海边位置，查看未来七天的天气、出钓指数、建议时段以及钓位和饵料建议；提供中文和英文页面。
+
+出钓指数为 0–100 的天气与经验模型估算，结合水温、气压、温差、风、天气、时段、月相或潮汐及水域类型，并对雷暴、大风、大浪等情况限制评分。模型没有以真实鱼获数据校准，评分不保证鱼获。天气与地图数据依赖在线公共服务，出行前需核对当地规定和实际天气、水情。
+
+## 使用入口
+
+- [中文鱼情查询](https://fish.satloot.com/): 地图选点、鱼种与钓法选择、七天评分和最佳出钓时段。
+- [English fishing forecast](https://fish.satloot.com/en/): Seven-day fishing weather estimates and suggested fishing hours.
+
+## Optional
+
+- [公开源码与使用说明](https://github.com/q3579338/fishing-weather-forecast-china): 网页和 Android 项目源码、数据来源、构建说明与许可证。
+- [评分模型说明](https://github.com/q3579338/fishing-weather-forecast-china/blob/main/docs/model.md): 小时评分、日评分、鱼种适温与危险天气处理。
