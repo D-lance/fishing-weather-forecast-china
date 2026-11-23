@@ -947,5 +947,5 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() =
 readUrl();
 loadOxygenData();
 if (YINGTAN_ONLY && S.lat == null) {
-  choosePlace(DEFAULT_POINT.lat, DEFAULT_POINT.lon, DEFAULT_POINT.name, {});
+  choosePlace(DEFAULT_POINT.lat, DEFAULT_POINT.lon, DEFAULT_POINT.name, { water: 'river' });
 }
