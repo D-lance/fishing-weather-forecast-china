@@ -117,6 +117,9 @@
     .map-note { margin: 6px 0 0; }
     .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
     .opts label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    .species-row { display: flex; flex-wrap: wrap; gap: 6px; min-height: 42px; align-items: center; }
+    .species-row button { height: 36px; padding: 0 12px; border-radius: 18px; background: var(--line-soft); border: 1px solid transparent; font-size: 14px; color: var(--body); }
+    .species-row button[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
     .status { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 1.6em; }
     .status.err { color: var(--danger); }
 
@@ -233,8 +236,8 @@
       <div class="recent" id="recent" hidden></div>
       <div class="opts">
         <div>
-          <label for="sp">目标鱼种</label>
-          <select id="sp"></select>
+          <label>目标鱼种</label>
+          <div class="species-row" id="sp-row" role="group" aria-label="目标鱼种"></div>
         </div>
         <div>
           <label for="w">水域类型</label>

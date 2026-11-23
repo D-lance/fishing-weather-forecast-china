@@ -54,6 +54,7 @@ const TXT = {
     meta: (d) => `估算水温 ${d.water_temp}℃ · 气温 ${fmt(d.air_min)}–${fmt(d.air_max)}℃ · 降水 ${fmt(d.precip)} 毫米 · 日出 ${d.sunrise} · 日落 ${d.sunset}${d.moonrise ? ' · 月出 ' + d.moonrise : ''}${d.moonset ? ' · 月落 ' + d.moonset : ''}`,
     placeMeta: (p, w, src) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · 海拔 ${p.elevation ?? '—'} 米 · 水域：${w}（${src}）`,
     oxygenMeta: (o) => `城市平均溶解氧 ${fmt(o.value)} mg/L（${o.count} 个站${o.time ? '，' + o.time : ''}）`,
+    speciesMeta: (n) => `鱼种：${n}`,
     wsrc: { osm: '地图自动认出', user: '手动选择', default: '没认出' },
     lvDesc: ['挑对时段去，大概率连竿', '挑对时段去，有鱼口', '能钓，口不会太好', '难钓，想去就只挑最佳时段', '天气不好或不安全，建议改天'],
     weight: (w) => `占 ${w}%`, km: (m) => (m < 1000 ? `${Math.round(m)} 米` : `${(m / 1000).toFixed(1)} 公里`),
@@ -94,6 +95,7 @@ const TXT = {
     meta: (d) => `Est. water ${d.water_temp}°C · air ${fmt(d.air_min)}–${fmt(d.air_max)}°C · rain ${fmt(d.precip)} mm · sunrise ${d.sunrise} · sunset ${d.sunset}${d.moonrise ? ' · moonrise ' + d.moonrise : ''}${d.moonset ? ' · moonset ' + d.moonset : ''}`,
     placeMeta: (p, w, src) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · elevation ${p.elevation ?? '—'} m · water: ${w.toLowerCase()} (${src})`,
     oxygenMeta: (o) => `City avg. DO ${fmt(o.value)} mg/L (${o.count} station${o.count === 1 ? '' : 's'}${o.time ? ', ' + o.time : ''})`,
+    speciesMeta: (n) => `Species: ${n}`,
     wsrc: { osm: 'recognised from the map', user: 'picked by you', default: 'not recognised' },
     lvDesc: ['Pick the right hours and expect steady bites', 'Pick the right hours and you should get bites', 'Fishable, but the bite will be slow', 'Tough; if you go, stick to the best window', 'Bad or unsafe weather; try another day'],
     weight: (w) => `${w}%`, km: (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`),
@@ -176,13 +178,21 @@ function showForecastError(msg) {
 function hideForecastError() { $('error').hidden = true; }
 
 // ───────── 下拉框 ─────────
+function renderSpecies() {
+  document.querySelectorAll('#sp-row button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sp === S.sp)));
+}
 function initSelects() {
   const species = YINGTAN_ONLY ? SPECIES.filter((s) => YINGTAN_SPECIES.includes(s.key)) : SPECIES;
   if (YINGTAN_ONLY && !YINGTAN_SPECIES.includes(S.sp)) S.sp = 'crucian';
-  $('sp').innerHTML = species.map((s) => `<option value="${s.key}">${esc(LANG === 'en' ? s.en : s.name)}</option>`).join('');
+  $('sp-row').innerHTML = species.map((s) => `<button type="button" data-sp="${s.key}" aria-pressed="${s.key === S.sp}">${esc(LANG === 'en' ? s.en : s.name)}</button>`).join('');
+  $('sp-row').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    S.sp = b.dataset.sp;
+    renderSpecies();
+    syncUrl();
+    recompute();
+  }));
   const waters = YINGTAN_ONLY ? WATER_TYPES.filter((w) => w !== 'sea') : WATER_TYPES;
   $('w').innerHTML = `<option value="">${esc(TXT.waterAuto)}</option>` + waters.map((w) => `<option value="${w}">${esc(TXT.water[w])}</option>`).join('');
-  $('sp').addEventListener('change', () => { S.sp = $('sp').value; syncUrl(); recompute(); });
   $('w').addEventListener('change', () => {
     S.wUser = $('w').value || null;
     syncUrl();
@@ -212,7 +222,7 @@ function readUrl() {
   const sp = q.get('sp'), w = q.get('w'), wt = q.get('wt');
   if (sp && SPECIES.some((s) => s.key === sp) && (!YINGTAN_ONLY || YINGTAN_SPECIES.includes(sp))) S.sp = sp;
   if (w && WATER_TYPES.includes(w) && (!YINGTAN_ONLY || w !== 'sea')) S.wUser = w;
-  $('sp').value = S.sp;
+  renderSpecies();
   $('w').value = S.wUser || '';
   if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
     choosePlace(lat, lon, (q.get('n') || '').slice(0, 80), { water: WATER_TYPES.includes(wt) ? wt : null });
@@ -667,7 +677,8 @@ function renderDetail() {
   $('d-level').textContent = d.level;
   $('d-level').className = 'lv b' + d.level_index;
   $('d-lvdesc').textContent = d.level_text || TXT.lvDesc[d.level_index];
-  $('d-meta').textContent = TXT.meta(d);
+  const spMeta = SPECIES.find((x) => x.key === S.sp) || SPECIES.find((x) => x.key === DEFAULT_SPECIES);
+  $('d-meta').textContent = TXT.speciesMeta(LANG === 'en' ? spMeta.en : spMeta.name) + TXT.sep + TXT.meta(d);
   $('d-wins').innerHTML = d.windows.length ? d.windows.map((w) => `<span>${w.start}–${w.end} · ${w.score}</span>`).join('') : `<span>${esc(TXT.noWin)}</span>`;
   const keys = Object.keys(WEIGHTS);
   $('d-subs').innerHTML = keys.map((k, i) => {
