@@ -3,9 +3,11 @@
 // 没有后端：所有请求都从浏览器发出。坐标一律以 WGS-84 保存；只有画到高德底图上时才换成 GCJ-02（coord.js）。
 import {
   computeForecast, forecastUrl, marineUrl, floodUrl, localToday, geocodeUrl, OVERPASS_MIRRORS, overpassQuery,
-  classifyWater, marineAvailable, SPECIES, DEFAULT_SPECIES, WATER_TYPES, WEIGHTS,
+  classifyWater, marineAvailable, SPECIES, WATER_TYPES, WEIGHTS,
 } from './engine.js';
 import { wgs84ToGcj02, gcj02ToWgs84, snapToGeom, geomSpanM, distM } from './coord.js';
+import { bestByDate, mergeAlerts, dayFlagKeys, allOptimal } from './rank.js';
+import { summarizeDay } from './weather.js';
 
 // Nominatim 使用规范建议带联系邮箱（浏览器改不了 User-Agent，会自动带 Referer）。上线前填站点联系邮箱；留空则不带。
 const NOMINATIM_EMAIL = 'admin@satloot.com';
@@ -22,7 +24,7 @@ const YINGTAN_ONLY = true;
 const YINGTAN_CITY = '鹰潭市';
 const YINGTAN_BOUNDS = { minLat: 27.8, maxLat: 28.7, minLon: 116.6, maxLon: 117.4 };
 const DEFAULT_POINT = { lat: 28.26, lon: 117.03, name: '信江（鹰潭段）' };
-const YINGTAN_SPECIES = ['crucian', 'bream', 'culter', 'mandarin'];
+const TARGET_SPECIES = ['crucian', 'bream', 'culter', 'mandarin'];
 const insideYingtan = (lat, lon) => lat >= YINGTAN_BOUNDS.minLat && lat <= YINGTAN_BOUNDS.maxLat
   && lon >= YINGTAN_BOUNDS.minLon && lon <= YINGTAN_BOUNDS.maxLon;
 
@@ -48,19 +50,37 @@ const TXT = {
     nearbyFail: '附近水域没查到，就按你点的位置算；也可以手动选水域类型。', usePoint: '都不是，就按我点的位置', inside: '就在水面上',
     segment: (river, place) => `${river}·${place}段`,
     recent: '最近：', unnamed: '地图选点', copied: '链接已复制', copyFail: '复制失败，请直接复制地址栏',
+    shotWorking: '正在生成整页截图…', shotSaved: '整页截图已生成', shotCanceled: '已取消分享',
+    shotUnsupported: '当前浏览器不支持整页截图', shotFail: '生成整页截图失败，请重试', close: '关闭',
+    cardBrand: '今日鱼情', cardBackup: '备选排行', cardFooter: '按天气经验估算，不保证有鱼',
     today: '今天', tomorrow: '明天', week: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     dateFmt: (m, d, w) => `${m}月${d}日 ${w}`, shortDate: (m, d) => `${m}/${d}`,
     waterTemp: (t) => `水温约 ${t}℃`, noWin: '没有好时段',
-    meta: (d) => `估算水温 ${d.water_temp}℃ · 气温 ${fmt(d.air_min)}–${fmt(d.air_max)}℃ · 降水 ${fmt(d.precip)} 毫米 · 日出 ${d.sunrise} · 日落 ${d.sunset}${d.moonrise ? ' · 月出 ' + d.moonrise : ''}${d.moonset ? ' · 月落 ' + d.moonset : ''}`,
+    meta: (d) => `估算水温 ${d.water_temp}℃${d.gate != null ? ` · 水温闸门 ×${Number(d.gate).toFixed(2)}` : ''} · 降水 ${fmt(d.precip)} 毫米 · 日出 ${d.sunrise} · 日落 ${d.sunset}${d.moonrise ? ' · 月出 ' + d.moonrise : ''}${d.moonset ? ' · 月落 ' + d.moonset : ''}`,
     placeMeta: (p, w, src) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · 海拔 ${p.elevation ?? '—'} 米 · 水域：${w}（${src}）`,
     oxygenMeta: (o) => `城市平均溶解氧 ${fmt(o.value)} mg/L（${o.count} 个站${o.time ? '，' + o.time : ''}）`,
-    speciesMeta: (n) => `鱼种：${n}`,
+    shadow: (ver, score) => `旧模型 ${ver}：${score} 分（对比，不参与当前评分）`,
+    bestLabel: '主钓', viewLabel: '查看', bestWindow: '最佳', winWhyLabel: '为什么是这段', rankLabel: '按鱼种鱼情排序',
+    focusLabel: (n, isTop) => `查看：${n}${isTop ? '（主钓）' : ''}`,
+    topBadge: '主钓', expand: (n) => `展开全部 ${n} 种`, collapse: '收起',
+    closeGap: '差距很小，可以都准备',
+    tempWhy: (name, temp, lo, hi) => `水温 ${temp}℃，${name}适温 ${lo}–${hi}℃；鱼种权重见下方`,
+    allOptimalTitle: (n) => `${n} 种都适温`,
+    allOptimal: (n) => `${n} 种都适温，按你常钓的鱼和饵准备`,
+    allOptimalShort: '都适温',
+    wxPlace: '鹰潭',
+    weather: { clear: '晴', mainlyClear: '晴间多云', partlyCloudy: '多云', overcast: '阴', fog: '雾', drizzle: '毛毛雨', rain: '雨', heavyRain: '大雨', snow: '雪', thunder: '雷雨', unknown: '—' },
+    dirs: ['北', '东北', '东', '东南', '南', '西南', '西', '西北'],
+    tempRange: (lo, hi) => `${lo}–${hi}℃`,
+    wind: (dir, level) => `${dir}风 ${level}级`,
+    rainProb: (p) => `降水 ${p}%`,
+    humidity: (h) => `湿度 ${h}%`,
     wsrc: { osm: '地图自动认出', user: '手动选择', default: '没认出' },
     lvDesc: ['挑对时段去，大概率连竿', '挑对时段去，有鱼口', '能钓，口不会太好', '难钓，想去就只挑最佳时段', '天气不好或不安全，建议改天'],
     weight: (w) => `占 ${w}%`, km: (m) => (m < 1000 ? `${Math.round(m)} 米` : `${(m / 1000).toFixed(1)} 公里`),
     subs: { temp: '水温', pressure: '气压', trend: '温变', wind: '风', sky: '天空', time: '时段', moon: '月相/潮', geo: '水域' },
     alertTitle: '安全警告', alertItem: (day, line) => `${day}：${line}`,
-    kinds: { thunder: '雷暴', gale: '大风', wave: '大浪', rain: '强降水', heat: '高温', ice: '结冰' },
+    kinds: { thunder: '雷暴', gale: '大风', wave: '大浪', rain: '强降水', oxygen: '低氧', oxygenWarn: '溶氧偏低', heat: '高温', ice: '结冰' },
     capped: (ks) => `${ks.join('、')}封顶`,
     sunrise: '日出', sunset: '日落', tip: (t, h, hs) => `${t}  这一小时 ${h} 分 · 前后三小时平均 ${hs} 分`, tipHint: '在曲线上点按或滑动，看每个小时的分数',
     title: (n, rel, s) => `${n} 钓鱼天气 ${rel}出钓指数${s} - 今日鱼情`,
@@ -89,19 +109,37 @@ const TXT = {
     nearbyFail: 'Could not look up the water nearby; using the point you tapped. You can also pick the water type yourself.', usePoint: 'None of these, use my point', inside: 'you are on it',
     segment: (river, place) => `${river} · ${place}`,
     recent: 'Recent:', unnamed: 'Map point', copied: 'Link copied', copyFail: 'Copy failed, copy the address bar instead',
+    shotWorking: 'Generating full-page image…', shotSaved: 'Full-page image ready', shotCanceled: 'Share cancelled',
+    shotUnsupported: 'This browser cannot generate a full-page image', shotFail: 'Could not generate the full-page image; try again', close: 'Close',
+    cardBrand: 'Fishing Forecast', cardBackup: 'Alternatives', cardFooter: 'Weather-based estimate; no guarantee of fish',
     today: 'Today', tomorrow: 'Tomorrow', week: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     dateFmt: (m, d, w) => `${w} ${m}/${d}`, shortDate: (m, d) => `${m}/${d}`,
     waterTemp: (t) => `Water about ${t}°C`, noWin: 'No good window',
-    meta: (d) => `Est. water ${d.water_temp}°C · air ${fmt(d.air_min)}–${fmt(d.air_max)}°C · rain ${fmt(d.precip)} mm · sunrise ${d.sunrise} · sunset ${d.sunset}${d.moonrise ? ' · moonrise ' + d.moonrise : ''}${d.moonset ? ' · moonset ' + d.moonset : ''}`,
+    meta: (d) => `Est. water ${d.water_temp}°C${d.gate != null ? ` · water-temp gate ×${Number(d.gate).toFixed(2)}` : ''} · rain ${fmt(d.precip)} mm · sunrise ${d.sunrise} · sunset ${d.sunset}${d.moonrise ? ' · moonrise ' + d.moonrise : ''}${d.moonset ? ' · moonset ' + d.moonset : ''}`,
     placeMeta: (p, w, src) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · elevation ${p.elevation ?? '—'} m · water: ${w.toLowerCase()} (${src})`,
     oxygenMeta: (o) => `City avg. DO ${fmt(o.value)} mg/L (${o.count} station${o.count === 1 ? '' : 's'}${o.time ? ', ' + o.time : ''})`,
-    speciesMeta: (n) => `Species: ${n}`,
+    shadow: (ver, score) => `Old model ${ver}: ${score} (comparison only; not used for the live score)`,
+    bestLabel: 'Top pick', viewLabel: 'Viewing', bestWindow: 'Best', winWhyLabel: 'Why this window', rankLabel: 'Ranked by species profile',
+    focusLabel: (n, isTop) => `Viewing: ${n}${isTop ? ' (top pick)' : ''}`,
+    topBadge: 'Top', expand: (n) => `Show all ${n}`, collapse: 'Show less',
+    closeGap: 'Very close — prepare for both',
+    tempWhy: (name, temp, lo, hi) => `Water ${temp}°C; ${name} optimal ${lo}–${hi}°C; see species weights below`,
+    allOptimalTitle: (n) => `All ${n} in range`,
+    allOptimal: (n) => `All ${n} are in range; choose by your usual target and bait`,
+    allOptimalShort: 'In range',
+    wxPlace: 'Yingtan',
+    weather: { clear: 'Clear', mainlyClear: 'Mostly clear', partlyCloudy: 'Partly cloudy', overcast: 'Overcast', fog: 'Fog', drizzle: 'Drizzle', rain: 'Rain', heavyRain: 'Heavy rain', snow: 'Snow', thunder: 'Thunderstorm', unknown: '—' },
+    dirs: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'],
+    tempRange: (lo, hi) => `${lo}–${hi}°C`,
+    wind: (dir, level) => `${dir} wind, force ${level}`,
+    rainProb: (p) => `${p}% rain`,
+    humidity: (h) => `${h}% humidity`,
     wsrc: { osm: 'recognised from the map', user: 'picked by you', default: 'not recognised' },
     lvDesc: ['Pick the right hours and expect steady bites', 'Pick the right hours and you should get bites', 'Fishable, but the bite will be slow', 'Tough; if you go, stick to the best window', 'Bad or unsafe weather; try another day'],
     weight: (w) => `${w}%`, km: (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`),
     subs: { temp: 'Water temp', pressure: 'Pressure', trend: 'Temp trend', wind: 'Wind', sky: 'Sky', time: 'Time of day', moon: 'Moon / tide', geo: 'Water body' },
     alertTitle: 'Safety warning', alertItem: (day, line) => `${day}: ${line}`,
-    kinds: { thunder: 'Storm', gale: 'Gale', wave: 'High waves', rain: 'Heavy rain', heat: 'Heat', ice: 'Ice' },
+    kinds: { thunder: 'Storm', gale: 'Gale', wave: 'High waves', rain: 'Heavy rain', oxygen: 'Low oxygen', oxygenWarn: 'Low DO', heat: 'Heat', ice: 'Ice' },
     capped: (ks) => `Capped: ${ks.join(', ').toLowerCase()}`,
     sunrise: 'Sunrise', sunset: 'Sunset', tip: (t, h, hs) => `${t}  this hour ${h} · 3-hour average ${hs}`, tipHint: 'Tap or drag on the curve to read each hour',
     title: (n, rel, s) => `${n} fishing weather – ${rel} bite index ${s} | Fishing Forecast`,
@@ -111,6 +149,7 @@ const TXT = {
   },
 }[LANG];
 const LV_COLORS = ['#15803d', '#4d7c0f', '#b45309', '#c2410c', '#b91c1c'];
+const WX_ICONS = { clear: '☀️', mainlyClear: '🌤️', partlyCloudy: '⛅', overcast: '☁️', fog: '🌫️', drizzle: '🌦️', rain: '🌧️', heavyRain: '🌧️', snow: '❄️', thunder: '⛈️', unknown: '•' };
 const KIND_COLORS = { river: '#2563eb', lake: '#0891b2', reservoir: '#0f766e', sea: '#1e40af', pond: '#65a30d', place: '#78716c' };
 const KIND_ORDER = ['river', 'lake', 'reservoir', 'sea', 'pond', 'place'];
 const fmt = (x) => (x == null ? '—' : (Math.round(x * 10) / 10).toString());
@@ -121,7 +160,11 @@ const fmtDist = (m) => (!Number.isFinite(m) ? '—' : m < 1 ? TXT.inside : TXT.k
 // ───────── 状态 ─────────
 const S = {
   lat: null, lon: null, name: '',
-  sp: DEFAULT_SPECIES,
+  focus: null,          // 当前查看鱼种；S.out 永远指向 S.outs[S.focus]
+  outs: null,           // { [speciesKey]: computeForecast 输出 }
+  days: null,           // bestByDate：每天 top + ranking
+  alerts: [],           // mergeAlerts：全鱼种去重后的安全提示
+  rankOpen: false,      // 备选排行是否展开
   wUser: null,          // 下拉手动选的水域类型（null = 自动）
   wAuto: null,          // 自动结果：null 未开始 / 'pending' / 类型 / 'fail'
   wPreset: null,        // 由所选水体直接决定的类型（搜索结果 / 附近水体），来源记 osm，不再跑 Overpass
@@ -150,7 +193,7 @@ function saveRecent() {
   const a = loadRecent().filter((x) => x.name !== S.name && (Math.abs(x.lat - S.lat) > 1e-3 || Math.abs(x.lon - S.lon) > 1e-3));
   a.unshift({ name: S.name, lat: +S.lat.toFixed(4), lon: +S.lon.toFixed(4), w: S.wPreset || undefined });
   lsSet(RECENT_KEY, JSON.stringify(a.slice(0, 8)));
-  renderRecent();
+  if ($('recent')) renderRecent();
 }
 function renderRecent() {
   const a = loadRecent();
@@ -178,19 +221,7 @@ function showForecastError(msg) {
 function hideForecastError() { $('error').hidden = true; }
 
 // ───────── 下拉框 ─────────
-function renderSpecies() {
-  document.querySelectorAll('#sp-row button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sp === S.sp)));
-}
 function initSelects() {
-  const species = YINGTAN_ONLY ? SPECIES.filter((s) => YINGTAN_SPECIES.includes(s.key)) : SPECIES;
-  if (YINGTAN_ONLY && !YINGTAN_SPECIES.includes(S.sp)) S.sp = 'crucian';
-  $('sp-row').innerHTML = species.map((s) => `<button type="button" data-sp="${s.key}" aria-pressed="${s.key === S.sp}">${esc(LANG === 'en' ? s.en : s.name)}</button>`).join('');
-  $('sp-row').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-    S.sp = b.dataset.sp;
-    renderSpecies();
-    syncUrl();
-    recompute();
-  }));
   const waters = YINGTAN_ONLY ? WATER_TYPES.filter((w) => w !== 'sea') : WATER_TYPES;
   $('w').innerHTML = `<option value="">${esc(TXT.waterAuto)}</option>` + waters.map((w) => `<option value="${w}">${esc(TXT.water[w])}</option>`).join('');
   $('w').addEventListener('change', () => {
@@ -204,13 +235,12 @@ function initSelects() {
 }
 
 // ───────── URL ─────────
-// ?lat=&lon=&sp=&w=（手选类型）&wt=（所选水体决定的类型）&n=（地名 / 水体名）
+// ?lat=&lon=&w=（手选类型）&wt=（所选水体决定的类型）&n=（地名 / 水体名）；旧 sp= 忽略
 function syncUrl() {
   if (S.lat == null) return;
   const q = new URLSearchParams();
   q.set('lat', S.lat.toFixed(4));
   q.set('lon', S.lon.toFixed(4));
-  q.set('sp', S.sp);
   if (S.wUser) q.set('w', S.wUser);
   if (S.wPreset) q.set('wt', S.wPreset);
   if (S.name) q.set('n', S.name);
@@ -219,10 +249,8 @@ function syncUrl() {
 function readUrl() {
   const q = new URLSearchParams(location.search);
   const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon'));
-  const sp = q.get('sp'), w = q.get('w'), wt = q.get('wt');
-  if (sp && SPECIES.some((s) => s.key === sp) && (!YINGTAN_ONLY || YINGTAN_SPECIES.includes(sp))) S.sp = sp;
+  const w = q.get('w'), wt = q.get('wt');
   if (w && WATER_TYPES.includes(w) && (!YINGTAN_ONLY || w !== 'sea')) S.wUser = w;
-  renderSpecies();
   $('w').value = S.wUser || '';
   if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
     choosePlace(lat, lon, (q.get('n') || '').slice(0, 80), { water: WATER_TYPES.includes(wt) ? wt : null });
@@ -493,7 +521,13 @@ async function showNearby(lat, lon) {
   }));
   box.querySelector('.use-point').addEventListener('click', hideNearby);
 }
-function hideNearby() { nearbyToken++; S.nearby = []; $('nearby').hidden = true; drawOverlays(); }
+function hideNearby() {
+  nearbyToken++;
+  S.nearby = [];
+  const box = $('nearby');
+  if (box) box.hidden = true;
+  drawOverlays();
+}
 
 // ───────── 主流程 ─────────
 /**
@@ -577,11 +611,35 @@ async function loadOxygenData() {
 function recompute() {
   if (!S.fc) return;
   const { water, src } = currentWater();
-  try {
-    S.out = computeForecast({ forecast: S.fc, marine: S.marine, flood: S.flood, oxygen: currentOxygen(), species: S.sp, water, waterSource: src, name: S.name, lang: LANG, now: S.today || localToday(S.fc), style: YINGTAN_ONLY ? 'taiwan' : undefined });
-  } catch (e) {
-    console.error(e);
+  const opts = {
+    forecast: S.fc, marine: S.marine, flood: S.flood, oxygen: currentOxygen(),
+    water, waterSource: src, name: S.name, lang: LANG,
+    now: S.today || localToday(S.fc), style: YINGTAN_ONLY ? 'taiwan' : undefined,
+  };
+  const outputs = [];
+  for (const key of TARGET_SPECIES) {
+    try {
+      const out = computeForecast({ ...opts, species: key });
+      // v0.5 旧模型：只附带对比数据，不替换 v0.7 主分数
+      try {
+        const shadow = computeForecast({ ...opts, species: key, model: '0.5' });
+        out.shadow = {
+          model_version: shadow.model_version,
+          weights: shadow.weights,
+          days: shadow.days.map((d) => ({ date: d.date, score: d.score, level: d.level, day_cap: d.day_cap })),
+        };
+      } catch { /* 影子模型失败不影响主结果 */ }
+      const sp = SPECIES.find((s) => s.key === key);
+      outputs.push({ key, name: LANG === 'en' ? (sp?.en || key) : (sp?.name || key), out });
+    } catch (e) {
+      console.error(`[${key}]`, e);
+    }
+  }
+  if (!outputs.length) {
     S.out = null;
+    S.outs = null;
+    S.days = null;
+    S.alerts = [];
     $('loading').hidden = true;
     $('result').hidden = true;
     $('empty').hidden = true;
@@ -589,7 +647,12 @@ function recompute() {
     setStatus('');
     return;
   }
-  if (!S.out.days.length) {
+  S.outs = Object.fromEntries(outputs.map((o) => [o.key, o.out]));
+  const dates = outputs[0].out.days.map((d) => d.date);
+  S.days = bestByDate(outputs, dates).filter((x) => x.ranking.length);
+  S.alerts = mergeAlerts(outputs);
+  if (!S.days.length) {
+    S.out = null;
     $('loading').hidden = true;
     $('result').hidden = true;
     $('empty').hidden = true;
@@ -597,7 +660,10 @@ function recompute() {
     setStatus('');
     return;
   }
-  if (S.sel >= S.out.days.length) S.sel = 0;
+  if (S.sel >= S.days.length) S.sel = 0;
+  const entry = S.days[S.sel];
+  if (!entry.ranking.some((r) => r.key === S.focus)) S.focus = entry.top.key;
+  S.out = S.outs[S.focus];
   $('loading').hidden = true;
   hideForecastError();
   $('empty').hidden = true;
@@ -620,6 +686,12 @@ function dateLabel(date, i) {
   return { rel, full: TXT.dateFmt(m, d, TXT.week[w]), short: TXT.shortDate(m, d) };
 }
 
+function flagLabels(day) {
+  return dayFlagKeys(day).map((k) => (k === 'cap'
+    ? TXT.capped((day.cap_kinds || []).map((x) => TXT.kinds[x]))
+    : TXT.kinds[k])).filter(Boolean);
+}
+
 function renderPlace() {
   if (!S.out) return;
   const p = S.out.place;
@@ -628,18 +700,20 @@ function renderPlace() {
     + (S.out.oxygen ? `${TXT.sep}${TXT.oxygenMeta(S.out.oxygen)}` : '');
 }
 function updateTitle() {
-  const d = S.out && S.out.days[S.sel];
-  if (!d) return;
-  const lb = dateLabel(d.date, S.sel);
-  document.title = TXT.title(S.name || TXT.unnamed, lb.rel, d.score);
+  const top = S.days?.[S.sel]?.top;
+  if (!top) return;
+  const lb = dateLabel(S.days[S.sel].date, S.sel);
+  document.title = TXT.title(S.name || TXT.unnamed, lb.rel, top.score);
 }
 
 function renderAlerts() {
-  const items = [];
-  S.out.days.forEach((d, i) => {
-    const lb = dateLabel(d.date, i);
-    for (const a of d.alerts) items.push(TXT.alertItem(`${lb.rel} ${lb.short}`, a.line));
-  });
+  const idx = new Map((S.days || []).map((d, i) => [d.date, i]));
+  const items = (S.alerts || []).map((a) => {
+    const i = idx.get(a.date);
+    if (i == null) return null;
+    const lb = dateLabel(a.date, i);
+    return TXT.alertItem(`${lb.rel} ${lb.short}`, a.line);
+  }).filter(Boolean);
   $('alert-box').hidden = !items.length;
   $('alert-title').textContent = TXT.alertTitle;
   $('alert-list').innerHTML = items.map((x) => `<li>${esc(x)}</li>`).join('');
@@ -647,44 +721,147 @@ function renderAlerts() {
 
 function renderDays() {
   const box = $('days');
-  box.innerHTML = S.out.days.map((d, i) => {
-    const lb = dateLabel(d.date, i);
-    const win = d.windows[0] ? `${d.windows[0].start}–${d.windows[0].end}` : TXT.noWin;
-    const kinds = [...new Set(d.alerts.map((a) => a.key).filter((k) => ['thunder', 'gale', 'wave', 'rain'].includes(k)))];
+  box.innerHTML = (S.days || []).map((entry, i) => {
+    const top = entry.top;
+    if (!top) return '';
+    const d = top.day;
+    const lb = dateLabel(entry.date, i);
+    const win = top.windows[0] ? `${top.windows[0].start}–${top.windows[0].end}` : TXT.noWin;
+    const flags = flagLabels(d);
+    const warm = allOptimal(entry);
     return `<button type="button" class="day" data-i="${i}" aria-pressed="${i === S.sel}">
       <div class="dname">${esc(lb.rel)} ${esc(lb.short)}</div>
-      <div class="score c${d.level_index}">${d.score}</div>
-      <span class="lv b${d.level_index}">${esc(d.level)}</span>
+      <div class="score c${top.level_index}">${top.score}</div>
+      <div class="sp">${esc(warm ? TXT.allOptimalShort : top.name)}</div>
+      <span class="lv b${top.level_index}">${esc(top.level)}</span>
       <div class="wt">${esc(TXT.waterTemp(d.water_temp))}</div>
       <div class="win">${esc(win)}</div>
-      ${d.day_cap != null ? `<div class="flag cap">${esc(TXT.capped(d.cap_kinds.map((k) => TXT.kinds[k])))}</div>` : kinds.length ? `<div class="flag">${esc(kinds.map((k) => TXT.kinds[k]).join(' · '))}</div>` : ''}
+      ${flags.length ? `<div class="flag${d.day_cap != null ? ' cap' : ''}">${esc(flags.join(' · '))}</div>` : ''}
     </button>`;
   }).join('');
   box.querySelectorAll('.day').forEach((b) => b.addEventListener('click', () => {
     S.sel = +b.dataset.i;
+    const entry = S.days[S.sel];
+    S.focus = entry.top.key;
+    S.rankOpen = false;
+    S.out = S.outs[S.focus];
     box.querySelectorAll('.day').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     renderDetail();
   }));
 }
 
+function renderWeather(entry) {
+  const el = $('d-weather');
+  const w = summarizeDay(S.fc, entry.date);
+  el.hidden = !w;
+  if (!w) { el.innerHTML = ''; return; }
+  const temp = w.tempMin == null || w.tempMax == null ? '—' : TXT.tempRange(fmt(w.tempMin), fmt(w.tempMax));
+  const wind = w.windDir == null || w.windLevel == null ? '—' : TXT.wind(TXT.dirs[w.windDir], w.windLevel);
+  const rain = w.rainProb == null ? '—' : TXT.rainProb(Math.round(w.rainProb));
+  const hum = w.humidity == null ? '—' : TXT.humidity(Math.round(w.humidity));
+  const icon = WX_ICONS[w.kind] || WX_ICONS.unknown;
+  const label = TXT.weather[w.kind] || TXT.weather.unknown;
+  const lb = dateLabel(entry.date, S.sel);
+  el.innerHTML = `<div class="wx-main">
+      <span class="wx-place">${esc(TXT.wxPlace)} · ${esc(lb.rel)} ${esc(lb.short)}</span>
+      <span class="wx-icon" aria-hidden="true">${icon}</span>
+      <span class="wx-kind">${esc(label)}</span>
+      <span class="wx-temp">${esc(temp)}</span>
+    </div>
+    <div class="wx-sub">${esc([wind, rain, hum].join(TXT.sep))}</div>`;
+}
+
+function renderBest(entry, focus) {
+  const el = $('d-best');
+  const top = entry.top;
+  const item = focus || top;
+  el.hidden = !item;
+  if (!item) { el.innerHTML = ''; return; }
+  const win = item.windows[0] ? `${item.windows[0].start}–${item.windows[0].end}` : TXT.noWin;
+  const winWhy = item.day.best_why ? [item.day.best_why.time, item.day.best_why.wind].filter(Boolean).join(TXT.sep) : '';
+  const warm = allOptimal(entry);
+  const gap = item.key === top.key && entry.ranking[1] && top.score - entry.ranking[1].score <= 3;
+  const flags = flagLabels(item.day);
+  const n = entry.ranking.length;
+  const sp = SPECIES.find((x) => x.key === item.key);
+  const why = !warm && sp ? TXT.tempWhy(item.name, fmt(item.day.water_temp), sp.opt_lo, sp.opt_hi) : '';
+  const label = warm ? TXT.rankLabel : item.key === top.key ? TXT.bestLabel : TXT.viewLabel;
+  const title = warm ? TXT.allOptimalTitle(n) : item.name;
+  el.innerHTML = `<div class="best-head">
+      <span class="best-label">${esc(label + TXT.colon)}</span>
+      <span class="best-sp">${esc(title)}</span>
+      <span class="big c${item.level_index}">${item.score}</span>
+      <span class="lv b${item.level_index}">${esc(item.level)}</span>
+      ${flags.length ? `<span class="best-flag">${esc(flags.join(' · '))}</span>` : ''}
+    </div>
+    ${warm
+      ? `<p class="best-why">${esc(TXT.allOptimal(n))}</p>`
+      : `<p class="best-why">${esc(TXT.rankLabel)}${esc(TXT.colon)}${esc(why)}</p>`}
+    <div class="best-win">${esc(TXT.bestWindow)} ${esc(win)}</div>
+    ${winWhy ? `<div class="best-win-why">${esc(TXT.winWhyLabel)}${esc(TXT.colon)}${esc(winWhy)}</div>` : ''}
+    ${warm ? '' : `<ul class="best-tips">${(item.day.advice || []).slice(0, 3).map((a) => `<li>${esc(a)}</li>`).join('')}</ul>`}
+    ${!warm && gap ? `<p class="best-gap">${esc(TXT.closeGap)}</p>` : ''}`;
+}
+
+function renderRank(entry) {
+  const el = $('d-rank');
+  const ranking = entry.ranking;
+  const top = entry.top;
+  el.hidden = ranking.length < 2;
+  if (el.hidden) { el.innerHTML = ''; return; }
+  const warm = allOptimal(entry);
+  const shown = S.rankOpen ? ranking : ranking.slice(0, 3);
+  el.innerHTML = `<div class="rank-head">${esc(TXT.rankLabel)}</div>` + shown.map((r) => {
+    const win = r.windows[0] ? `${r.windows[0].start}–${r.windows[0].end}` : TXT.noWin;
+    const flags = flagLabels(r.day);
+    return `<button type="button" class="rank-row" data-key="${esc(r.key)}" aria-pressed="${r.key === S.focus}">
+      <span class="rank-sp">${esc(r.name)}${!warm && r.key === top.key ? `<span class="top-badge">${esc(TXT.topBadge)}</span>` : ''}${flags.length ? `<span class="rank-flag">${esc(flags.join(' · '))}</span>` : ''}</span>
+      <span class="rank-score c${r.level_index}">${r.score}</span>
+      <span class="rank-lv b${r.level_index}">${esc(r.level)}</span>
+      <span class="rank-win">${esc(win)}</span>
+    </button>`;
+  }).join('') + (ranking.length > 3 ? `<button type="button" class="rank-more">${esc(S.rankOpen ? TXT.collapse : TXT.expand(ranking.length))}</button>` : '');
+  el.querySelectorAll('.rank-row').forEach((b) => b.addEventListener('click', () => {
+    S.focus = b.dataset.key;
+    S.out = S.outs[S.focus];
+    renderDetail();
+  }));
+  const more = el.querySelector('.rank-more');
+  if (more) more.addEventListener('click', () => { S.rankOpen = !S.rankOpen; renderDetail(); });
+}
+
 function renderDetail() {
-  const d = S.out && S.out.days[S.sel];
-  if (!d) { $('result').hidden = true; return; }
-  const lb = dateLabel(d.date, S.sel);
-  $('d-title').textContent = lb.rel === TXT.week[new Date(d.date + 'T00:00Z').getUTCDay()] ? lb.full : `${lb.rel} ${lb.full}`;
-  $('d-score').textContent = d.score;
-  $('d-score').className = 'big c' + d.level_index;
-  $('d-level').textContent = d.level;
-  $('d-level').className = 'lv b' + d.level_index;
-  $('d-lvdesc').textContent = d.level_text || TXT.lvDesc[d.level_index];
-  const spMeta = SPECIES.find((x) => x.key === S.sp) || SPECIES.find((x) => x.key === DEFAULT_SPECIES);
-  $('d-meta').textContent = TXT.speciesMeta(LANG === 'en' ? spMeta.en : spMeta.name) + TXT.sep + TXT.meta(d);
+  const entry = S.days && S.days[S.sel];
+  const top = entry && entry.top;
+  const out = S.focus && S.outs && S.outs[S.focus];
+  if (!entry || !top || !out) { $('result').hidden = true; return; }
+  const focusItem = entry.ranking.find((r) => r.key === S.focus) || top;
+  const d = out.days.find((x) => x.date === entry.date) || focusItem.day;
+  const lb = dateLabel(entry.date, S.sel);
+  $('d-title').textContent = lb.rel === TXT.week[new Date(entry.date + 'T00:00Z').getUTCDay()] ? lb.full : `${lb.rel} ${lb.full}`;
+  $('d-score').textContent = focusItem.score;
+  $('d-score').className = 'big c' + focusItem.level_index;
+  $('d-level').textContent = focusItem.level;
+  $('d-level').className = 'lv b' + focusItem.level_index;
+  $('d-lvdesc').textContent = focusItem.day.level_text || TXT.lvDesc[focusItem.level_index];
+  renderWeather(entry);
+  renderBest(entry, focusItem);
+  renderRank(entry);
+  const sp = SPECIES.find((x) => x.key === S.focus);
+  const warm = allOptimal(entry);
+  $('d-focus').textContent = TXT.focusLabel(LANG === 'en' ? (sp?.en || S.focus) : (sp?.name || S.focus), !warm && S.focus === top.key);
+  $('d-meta').textContent = TXT.meta(d);
+  const sh = (S.out.shadow?.days || []).find((x) => x.date === entry.date);
+  const shEl = $('d-shadow');
+  shEl.hidden = !sh;
+  shEl.textContent = sh ? TXT.shadow(S.out.shadow.model_version, sh.score) : '';
   $('d-wins').innerHTML = d.windows.length ? d.windows.map((w) => `<span>${w.start}–${w.end} · ${w.score}</span>`).join('') : `<span>${esc(TXT.noWin)}</span>`;
-  const keys = Object.keys(WEIGHTS);
+  const weights = S.out.weights || WEIGHTS;
+  const keys = Object.keys(weights);
   $('d-subs').innerHTML = keys.map((k, i) => {
     const v = d.sub[k];
     const col = v >= 80 ? LV_COLORS[0] : v >= 65 ? LV_COLORS[1] : v >= 50 ? LV_COLORS[2] : v >= 35 ? LV_COLORS[3] : LV_COLORS[4];
-    return `<div class="sub-row"><div class="top-line"><span><b>${esc(TXT.subs[k])}</b> <span class="small muted">${esc(TXT.weight(WEIGHTS[k]))}</span></span><b>${v}</b></div>
+    return `<div class="sub-row"><div class="top-line"><span><b>${esc(TXT.subs[k])}</b> <span class="small muted">${esc(TXT.weight(weights[k]))}</span></span><b>${v}</b></div>
       <div class="bar"><i style="width:${v}%;background:${col}"></i></div><div class="why">${esc(d.reasons[i] || '')}</div></div>`;
   }).join('');
   $('d-advice').innerHTML = d.advice.map((a) => `<li>${esc(a)}</li>`).join('');
@@ -699,7 +876,8 @@ function renderDetail() {
 // ───────── 小时曲线（canvas 手绘） ─────────
 let chartGeom = null;
 function drawChart(hover = -1) {
-  const d = S.out && S.out.days[S.sel];
+  const date = S.days?.[S.sel]?.date;
+  const d = S.out && date ? S.out.days.find((x) => x.date === date) : null;
   const cv = $('chart');
   if (!d || !cv.clientWidth) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -939,13 +1117,107 @@ async function copyShare(ev) {
   try { await navigator.clipboard.writeText(url); setStatus(TXT.copied); } catch { setStatus(TXT.copyFail, true); }
 }
 
+function shotFilename(now = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `fish-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}.png`;
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function renderFullPage() {
+  if (!window.html2canvas) throw new Error('html2canvas missing');
+  return window.html2canvas(document.body, {
+    backgroundColor: '#f7f6f3',
+    scale: 1,
+    useCORS: true,
+    logging: false,
+    windowWidth: 1080,
+    windowHeight: Math.max(document.documentElement.scrollHeight, 1440),
+    scrollX: 0,
+    scrollY: -window.scrollY,
+    onclone: (doc) => {
+      const top = doc.querySelector('.top');
+      if (top) top.style.position = 'static';
+      const status = doc.getElementById('status');
+      if (status) status.style.visibility = 'hidden';
+      const shot = doc.getElementById('shot-link');
+      if (shot) shot.style.visibility = 'hidden';
+      const modal = doc.getElementById('notes-modal');
+      if (modal) modal.remove();
+    },
+  });
+}
+
+async function shareCard() {
+  if (!S.days || !S.days[S.sel] || !S.days[S.sel].top) {
+    setStatus(TXT.shotFail, true);
+    return;
+  }
+  setStatus(TXT.shotWorking);
+  try {
+    const canvas = await renderFullPage();
+    if (!canvas) throw new Error('no card');
+    const name = shotFilename();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('no blob');
+    const file = new File([blob], name, { type: 'image/png' });
+    let canShare = false;
+    try { canShare = !!navigator.canShare && navigator.canShare({ files: [file] }); } catch { /* 下载兜底 */ }
+    const mobileShare = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (mobileShare && canShare && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ files: [file], title: document.title, text: S.name || '' });
+        setStatus(TXT.shotSaved);
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') { setStatus(TXT.shotCanceled); return; }
+      }
+    }
+    downloadBlob(blob, name);
+    setStatus(TXT.shotSaved);
+  } catch (e) {
+    setStatus(TXT.shotFail, true);
+  }
+}
+
 // ───────── 启动 ─────────
 S.basemap = lsGet(BASEMAP_KEY, 'amap') === 'osm' ? 'osm' : 'amap';
 S.nearby = [];
 initSelects();
-renderRecent();
+function openNotes(ev) {
+  if (ev) ev.preventDefault();
+  const d = $('notes-modal');
+  if (!d) return;
+  if (typeof d.showModal === 'function') {
+    if (!d.open) d.showModal();
+  } else {
+    d.setAttribute('open', '');
+  }
+}
+
+function closeNotes() {
+  const d = $('notes-modal');
+  if (!d) return;
+  if (typeof d.close === 'function') d.close();
+  else d.removeAttribute('open');
+}
+
 $('share-link').addEventListener('click', copyShare);
-document.querySelectorAll('.bm-switch button').forEach((b) => b.addEventListener('click', () => switchBasemap(b.dataset.bm)));
+$('shot-link').addEventListener('click', (ev) => { ev.preventDefault(); shareCard(); });
+$('notes-open').addEventListener('click', openNotes);
+document.querySelector('a[href="#notes"]')?.addEventListener('click', openNotes);
+$('notes-close').addEventListener('click', closeNotes);
+$('notes-close').setAttribute('aria-label', TXT.close);
+$('notes-modal').addEventListener('click', (ev) => { if (ev.target === $('notes-modal')) closeNotes(); });
 const cv = $('chart');
 cv.addEventListener('pointermove', chartPointer);
 cv.addEventListener('pointerdown', chartPointer);
@@ -954,6 +1226,7 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() =
 readUrl();
 loadOxygenData();
 if (YINGTAN_ONLY && S.lat == null) {
+  S.wUser = 'river';
+  $('w').value = 'river';
   choosePlace(DEFAULT_POINT.lat, DEFAULT_POINT.lon, DEFAULT_POINT.name, { water: 'river' });
 }
-if (YINGTAN_ONLY) openMap();

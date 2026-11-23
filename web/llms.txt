@@ -6,7 +6,7 @@
 
 ## 使用入口
 
-- [中文鱼情查询](https://fish.satloot.com/): 地图选点、鱼种与钓法选择、七天评分和最佳出钓时段。
+- [中文鱼情查询](https://fish.satloot.com/): 鹰潭固定钓点、4 种目标鱼固定排序、每日主钓 + 备选排行、日期天气带、浏览器截屏、七天评分和最佳出钓时段。
 - [English fishing forecast](https://fish.satloot.com/en/): Seven-day fishing weather estimates and suggested fishing hours.
 
 ## Optional

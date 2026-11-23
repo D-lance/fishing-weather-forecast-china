@@ -228,15 +228,84 @@ test('鳊鱼鱼种和台钓粉饵/虾建议', () => {
   assert(out.days[0].advice.some((a) => a.includes('台钓')), out.days[0].advice.join(' | '));
   const predator = engine.computeForecast({ forecast: makeWeather({ base: 22 }), species: 'culter', water: 'river', now: '2026-11-23', days: 7, style: 'taiwan' });
   assert(predator.days[0].advice.some((a) => a.includes('虾')), predator.days[0].advice.join(' | '));
+  const bass = engine.computeForecast({ forecast: makeWeather({ base: 22 }), species: 'bass', water: 'river', now: '2026-11-23', days: 7, style: 'taiwan' });
+  assert(bass.days[0].advice.some((a) => a.includes('虾肉/虾饵')), bass.days[0].advice.join(' | '));
 });
 
-test('app.js 鹰潭专用模式：默认点、边界、台钓、四种鱼', () => {
+test('app.js 鹰潭专用模式：默认点、边界、台钓、四种鱼主钓排行', () => {
   const app = fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8');
   assert(/const YINGTAN_ONLY = true/.test(app), '未开启鹰潭专用模式');
   assert(/const DEFAULT_POINT = \{ lat: 28\.26, lon: 117\.03/.test(app), '缺默认点');
-  assert(/const YINGTAN_SPECIES = \['crucian', 'bream', 'culter', 'mandarin'\]/.test(app), '鱼种列表不对');
+  assert(/const TARGET_SPECIES = \['crucian', 'bream', 'culter', 'mandarin'\]/.test(app), '四种目标鱼列表不对');
+  assert(!/S\.sp\b/.test(app), '不应再有单鱼种状态 S.sp');
+  assert(!/sp-row/.test(app), '不应再有鱼种勾选控件');
+  assert(!/q\.set\('sp'/.test(app), 'URL 不应再写 sp');
+  assert(/import \{ bestByDate, mergeAlerts, dayFlagKeys, allOptimal \} from '\.\/rank\.js'/.test(app), '未引入排行模块');
+  assert(/S\.outs/.test(app) && /S\.days/.test(app) && /S\.alerts/.test(app), '缺少多鱼种合并状态');
+  assert(/\$\('d-best'\)/.test(app) && /\$\('d-rank'\)/.test(app) && /\$\('d-focus'\)/.test(app), '缺少主钓/排行/查看元素');
+  assert(/S\.focus/.test(app), '缺少查看鱼种状态');
+  assert(/dayFlagKeys/.test(app) && /best-flag/.test(app) && /rank-flag/.test(app), '主钓/排行没有封顶/低氧标记');
+  assert(/allOptimal/.test(app) && /tempWhy/.test(app) && /水温闸门/.test(app), '缺少水温排序说明');
+  assert(/summarizeDay/.test(app) && /\$\('d-weather'\)/.test(app), '缺少日期天气带');
+  assert(/renderWeather/.test(app), '缺少天气渲染');
+  assert(/TXT\.wxPlace/.test(app), '缺少天气地点文案');
+  assert(/\$\('notes-open'\)/.test(app) && /showModal/.test(app), '缺少出钓指数说明弹窗');
+  assert(/\$\('notes-close'\)/.test(app), '缺少说明弹窗关闭');
+  assert(/renderFullPage/.test(app) && /html2canvas/.test(app), '缺少整页截图');
+  assert(/windowWidth: 1080/.test(app), '整页截图宽度不对');
+  assert(/\$\('shot-link'\)/.test(app), '缺少截图按钮事件');
+  assert(/shotSaved/.test(app) && /shotCanceled/.test(app), '缺少截图状态文案');
   assert(/insideYingtan/.test(app), '缺鹰潭边界校验');
   assert(/style: YINGTAN_ONLY \? 'taiwan'/.test(app), '未传台钓 style');
+  assert(/S\.out\.weights \|\| WEIGHTS/.test(app), '详情没有使用当前水域权重');
+  assert(/S\.wUser = 'river'/.test(app), '默认水域没有设为河流');
+  assert(/model: '0\.5'/.test(app), '没有计算旧模型对比');
+  assert(/S\.out\.shadow/.test(app), '没有附带影子数据');
+  assert(/\$\('d-shadow'\)/.test(app), '详情没有影子分展示');
+});
+
+// ── v0.5：水域类型作为上下文，切换八项权重 ──
+test('水域权重表每类合计 100 且河流/水库/池塘有区别', () => {
+  for (const [w, ws] of Object.entries(engine.WATER_WEIGHTS)) {
+    const sum = Object.values(ws).reduce((a, b) => a + b, 0);
+    assert(sum === 100, `${w} 权重合计 ${sum}`);
+  }
+  assert(engine.WATER_WEIGHTS.river.wind < engine.WATER_WEIGHTS.reservoir.wind, '河流风权重应低于水库');
+  assert(engine.WATER_WEIGHTS.pond.pressure > engine.WATER_WEIGHTS.unknown.pressure, '池塘气压权重应高于默认');
+});
+
+test('v0.5 旧模型输出当前水域权重', () => {
+  const river = engine.computeForecast({ forecast: makeWeather(), species: 'crucian', water: 'river', now: '2026-11-23', days: 7, model: '0.5' });
+  assert(river.weights.wind === 6 && river.weights.geo === 11, `river ${JSON.stringify(river.weights)}`);
+  const pond = engine.computeForecast({ forecast: makeWeather(), species: 'crucian', water: 'pond', now: '2026-11-23', days: 7, model: '0.5' });
+  assert(pond.weights.pressure === 22 && pond.weights.wind === 12, `pond ${JSON.stringify(pond.weights)}`);
+  assert(Object.values(pond.weights).reduce((a, b) => a + b, 0) === 100, 'pond 权重合计不是 100');
+});
+
+test('v0.6 影子模型独立输出，不替换 v0.5', () => {
+  const fc = makeWeather();
+  const v5 = engine.computeForecast({ forecast: fc, species: 'crucian', water: 'river', now: '2026-11-23', days: 7, model: '0.5' });
+  const v6 = engine.computeForecast({ forecast: fc, species: 'crucian', water: 'river', now: '2026-11-23', days: 7, model: '0.6' });
+  assert(v5.model_version === '0.5', `v5=${v5.model_version}`);
+  assert(v6.model_version === '0.6-shadow', `v6=${v6.model_version}`);
+  assert(v6.weights.time === 14 && v6.weights.pressure === 15 && v6.weights.moon === 3 && v6.weights.geo === 14, `v6 weights=${JSON.stringify(v6.weights)}`);
+  for (const [w, ws] of Object.entries(engine.SHADOW_WEIGHTS)) {
+    assert(Object.values(ws).reduce((a, b) => a + b, 0) === 100, `${w} 影子权重合计不是 100`);
+  }
+  assert(v5.days.length === 7 && v6.days.length === 7, `days ${v5.days.length}/${v6.days.length}`);
+  assert(Number.isFinite(v6.days[0].score), `v6 score=${v6.days[0].score}`);
+});
+
+test('v0.7 线上鱼种权重与 v0.5 对比', () => {
+  for (const [key, ws] of Object.entries(engine.SPECIES_WEIGHTS)) {
+    assert(Object.values(ws).reduce((a, b) => a + b, 0) === 100, `${key} 权重合计不是 100`);
+  }
+  const v7 = engine.computeForecast({ forecast: makeWeather(), species: 'crucian', water: 'river', now: '2026-11-23', days: 7 });
+  assert(v7.model_version === '0.7', `v7=${v7.model_version}`);
+  assert(JSON.stringify(v7.weights) === JSON.stringify(engine.SPECIES_WEIGHTS.crucian), `v7 weights=${JSON.stringify(v7.weights)}`);
+  assert(typeof v7.days[0].best_why?.time === 'string' && v7.days[0].best_why.time.length > 0, '缺少最佳小时理由');
+  const legacy = engine.computeForecast({ forecast: makeWeather(), species: 'crucian', water: 'river', now: '2026-11-23', days: 7, model: '0.5' });
+  assert(legacy.model_version === '0.5', `legacy=${legacy.model_version}`);
 });
 
 console.log(`\n${passed} 通过，${failed} 失败`);

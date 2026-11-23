@@ -1,6 +1,6 @@
 // 今日鱼情 · 评分引擎（纯函数，不碰 DOM；浏览器 <script type="module"> 与 Node 都能 import）
 //
-// 唯一口径：docs/model.md（鱼情模型 v0.4）+ docs/impl-notes.md。
+// 唯一口径：docs/model.md（鱼情模型 v0.5）+ docs/impl-notes.md。
 // 公式、权重、鱼种表、输出结构全部按该文件实现；Python 版（外部 skill 的 scripts/）是回归基准，
 // 两端对同一份 fixture 算出的分数差应 ≤ 1。改公式先改 model.md，再两端一起改。
 //
@@ -12,7 +12,9 @@
 // 时间口径：Open-Meteo 以 timezone=auto 返回本地钟点字符串（无偏移），本文件把它当作「本地分钟数」
 // （按 UTC 解析得到的伪时间戳 / 60000），需要真实时刻（日月计算）时再减去 utc_offset_seconds。
 
-export const MODEL_VERSION = '0.4';
+export const MODEL_VERSION = '0.7';
+export const LEGACY_MODEL_VERSION = '0.5';
+export const SHADOW_MODEL_VERSION = '0.6-shadow';
 
 // ───────────────────────── 数据源（§1） ─────────────────────────
 const HOURLY = 'temperature_2m,relative_humidity_2m,pressure_msl,surface_pressure,cloud_cover,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
@@ -301,6 +303,7 @@ const T = {
     pLow: '气压偏低', pHigh: '气压偏高', pDrop: '急降，有冷空气或降雨过境', pFall: '在下降', pJump: '猛升，冷空气过后鱼容易闭口', pRise: '在上升', pStable: '气压平稳',
     pShort: '最近 3 小时开始往下掉，鱼常趁机开口', pHypoxia: '低压闷热，容易缺氧浮头', pMissing: '气压数据暂缺，按一般情况算',
     trend: (dT, s, desc) => `今天平均气温比昨天 ${dT == null ? '没数据' : sgn(dT) + '℃'}：${desc}`,
+    trendWater: (dT, s, desc) => `估算水温比昨天 ${dT == null ? '没数据' : sgn(dT) + '℃'}：${desc}`,
     tCrash: '骤降，鱼停口', tDrop: '降温，开口变差', tUpCold: '天冷回暖，大好事', tUpMild: '升温，小有利', tUpHot: '天热还在升温，更闷', tStable: '气温平稳', tNone: '按平稳算',
     wind: (v, bf, dir, desc) => `${dir ? dir + '风' : '风'} ${bf} 级（${v.toFixed(1)} 米/秒）：${desc}`,
     wCalm: '几乎无风，水面发闷', wBest: '微风起浪，最理想', wOk: '风不大，还不错', wStrong: '风偏大，抛竿看漂吃力', wGale: '大风，很难钓', wStorm: '狂风，别出钓', wNorth: '，北风降温', wMissing: '风速数据暂缺，按一般情况算',
@@ -320,6 +323,7 @@ const T = {
         return bits.length ? `；${bits.join('，')}` : '';
       },
     },
+    fishPref: '（鱼种偏好）',
     geo: {
       riverFlood: (r) => `河道：近两天下雨 ${r.toFixed(0)} 毫米，涨水浑浊，找回水湾`,
       river: '河道：活水溶氧足，正常', reservoirHot: '水库：天热时深水区凉快，有利', reservoir: '水库：水面大，找结构',
@@ -364,6 +368,7 @@ const T = {
     pLow: 'low pressure', pHigh: 'high pressure', pDrop: 'dropping fast, a front is passing', pFall: 'falling', pJump: 'jumping, post-front high shuts the bite', pRise: 'rising', pStable: 'steady',
     pShort: 'dropping over the last 3 hours, fish often feed', pHypoxia: 'low, hot and still: fish may gasp for oxygen', pMissing: 'No pressure data, treated as average',
     trend: (dT, s, desc) => `Average air temp vs yesterday ${dT == null ? 'n/a' : sgn(dT) + '°C'}: ${desc}`,
+    trendWater: (dT, s, desc) => `Estimated water temp vs yesterday ${dT == null ? 'n/a' : sgn(dT) + '°C'}: ${desc}`,
     tCrash: 'sharp drop, bite shuts down', tDrop: 'cooling, bite weakens', tUpCold: 'warming, great in the cold season', tUpMild: 'warming, slight plus', tUpHot: 'warming, even stuffier in the heat', tStable: 'stable', tNone: 'treated as stable',
     wind: (v, bf, dir, desc) => `Wind ${v.toFixed(1)} m/s (Beaufort ${bf}${dir ? ', from the ' + dir : ''}): ${desc}`,
     wCalm: 'nearly calm, water is stuffy', wBest: 'light ripple, ideal', wOk: 'moderate breeze, fine', wStrong: 'fresh wind, casting gets hard', wGale: 'strong wind, hard to fish', wStorm: 'gale, stay home', wNorth: ', north wind chills', wMissing: 'No wind data, treated as average',
@@ -383,6 +388,7 @@ const T = {
         return bits.length ? `; ${bits.join(', ')}` : '';
       },
     },
+    fishPref: ' (species preference)',
     geo: {
       riverFlood: (r) => `River: ${r.toFixed(0)} mm of rain in 48 h, high muddy water, look for back-eddies`,
       river: 'River: flowing, oxygen-rich, normal', reservoirHot: 'Reservoir: deep water stays cool in the heat', reservoir: 'Reservoir: big water, fish structure',
@@ -490,6 +496,30 @@ function sPressure(P, P3, P24, tempC, v, L, low = 1000, high = 1030, hypoxia = 1
   return { s: clamp(s), reason: L.pressure(P, d24, parts) };
 }
 
+// v0.6 影子：气压拆成绝对（35%）+ 趋势/锋面（65%）。
+function sPressureShadow(P, P3, P24, tempC, v, L, low = 1000, high = 1030, hypoxia = 1005) {
+  if (P == null) return { s: 70, reason: L.pMissing };
+  const parts = [];
+  let abs = 100;
+  if (P < low) { abs -= Math.min(30, 3 * (low - P)); parts.push(L.pLow); }
+  if (P > high) { abs -= Math.min(20, 2 * (P - high)); parts.push(L.pHigh); }
+  const d24 = P24 != null ? P - P24 : null;
+  const d3 = P3 != null ? P - P3 : null;
+  let trend = 100;
+  if (d24 != null) {
+    if (d24 <= -6) { trend -= 25; parts.push(L.pDrop); }
+    else if (d24 <= -3) { trend -= 10; parts.push(L.pFall); }
+    else if (d24 >= 6) { trend -= 25; parts.push(L.pJump); }
+    else if (d24 >= 3) { trend -= 10; parts.push(L.pRise); }
+    else parts.push(L.pStable);
+  }
+  if (d3 != null && d3 <= -1.0 && (d24 == null || d24 > -6)) { trend += 5; parts.push(L.pShort); }
+  let s = 0.35 * clamp(abs) + 0.65 * clamp(trend);
+  if (P < hypoxia && tempC != null && tempC >= 30 && v != null && v < 2) { s -= 20; parts.push(L.pHypoxia); }
+  if (!parts.length) parts.push(L.pStable);
+  return { s: clamp(s), reason: L.pressure(P, d24, parts) };
+}
+
 function sTrend(dT, season, L) {
   let s = 80, desc;
   if (dT == null) { desc = L.tNone; }
@@ -501,6 +531,20 @@ function sTrend(dT, season, L) {
     else { s -= 20; desc = L.tUpHot; }
   } else { s += 10; desc = L.tStable; }
   return { s: clamp(s), reason: L.trend(dT, season, desc) };
+}
+
+// v0.6 影子：用估算水温趋势，而不是气温趋势。
+function sTrendShadow(dW, season, L) {
+  let s = 80, desc;
+  if (dW == null) { desc = L.tNone; }
+  else if (dW <= -6) { s -= 50; desc = L.tCrash; }
+  else if (dW <= -3) { s -= 25; desc = L.tDrop; }
+  else if (dW >= 3) {
+    if (season === 'cold') { s += 20; desc = L.tUpCold; }
+    else if (season === 'mild') { s += 10; desc = L.tUpMild; }
+    else { s -= 20; desc = L.tUpHot; }
+  } else { s += 10; desc = L.tStable; }
+  return { s: clamp(s), reason: L.trendWater(dW, season, desc) };
 }
 
 function sWind(v, dir, season, L, lang) {
@@ -547,6 +591,22 @@ function sSky(c, p, code, season, L) {
 // 午间取半开区间 [11:00, 15:00)。这三处 model.md 没写死，按 Python 基准实现对齐。
 function sTime(t, day, season, L) {
   const { sr, ss, majors, minors } = day;
+  let s, slot, kind;
+  const tod = ((t % 1440) + 1440) % 1440;
+  if (sr != null && t >= sr - 60 && t <= sr + 120) { s = 100; slot = L.time.dawn; kind = 'dawn'; }
+  else if (ss != null && t >= ss - 120 && t <= ss + 60) { s = 100; slot = L.time.dusk; kind = 'dusk'; }
+  else if (tod >= 660 && tod < 900) { s = season === 'hot' ? 30 : season === 'mild' ? 70 : 100; slot = L.time.noon[season]; kind = 'noon'; }
+  else if ((ss != null && t > ss + 60) || (sr != null && t < sr - 60)) { s = season === 'hot' ? 75 : season === 'mild' ? 45 : 20; slot = L.time.night[season]; kind = 'night'; }
+  else { s = 70; slot = L.time.day; kind = 'day'; }
+  let bonus = 0, extra = '';
+  if (majors.some((m) => Math.abs(t - m) <= 60)) { bonus = 15; extra = L.major; }
+  else if (minors.some((m) => Math.abs(t - m) <= 30)) { bonus = 8; extra = L.minor; }
+  return { s: clamp(Math.min(100, s + bonus)), reason: slot + extra, kind };
+}
+
+// v0.6 影子：solunar 加成从 +15/+8 降到 +8/+4，避免月亮时段压过晨昏。
+function sTimeShadow(t, day, season, L) {
+  const { sr, ss, majors, minors } = day;
   let s, slot;
   const tod = ((t % 1440) + 1440) % 1440;
   if (sr != null && t >= sr - 60 && t <= sr + 120) { s = 100; slot = L.time.dawn; }
@@ -555,8 +615,8 @@ function sTime(t, day, season, L) {
   else if ((ss != null && t > ss + 60) || (sr != null && t < sr - 60)) { s = season === 'hot' ? 75 : season === 'mild' ? 45 : 20; slot = L.time.night[season]; }
   else { s = 70; slot = L.time.day; }
   let bonus = 0, extra = '';
-  if (majors.some((m) => Math.abs(t - m) <= 60)) { bonus = 15; extra = L.major; }
-  else if (minors.some((m) => Math.abs(t - m) <= 30)) { bonus = 8; extra = L.minor; }
+  if (majors.some((m) => Math.abs(t - m) <= 60)) { bonus = 8; extra = L.major; }
+  else if (minors.some((m) => Math.abs(t - m) <= 30)) { bonus = 4; extra = L.minor; }
   return { s: clamp(Math.min(100, s + bonus)), reason: slot + extra };
 }
 
@@ -612,6 +672,69 @@ function sGeo(water, season, v, rain48, wave, trend, L) {
 
 const TIDE_MIN_RANGE = 0.10;
 export const WEIGHTS = { temp: 25, pressure: 20, trend: 15, wind: 10, sky: 10, time: 10, moon: 5, geo: 5 };
+// v0.5：水域类型作为上下文，切换权重而不是只给 geo 加 5 分。
+// 河流看水位/流量，风权重低；水库/湖泊看风；池塘看气压/闷热/溶氧。
+export const WATER_WEIGHTS = {
+  unknown: WEIGHTS,
+  river: { temp: 25, pressure: 18, trend: 15, wind: 6, sky: 10, time: 10, moon: 5, geo: 11 },
+  reservoir: { temp: 25, pressure: 20, trend: 12, wind: 14, sky: 8, time: 10, moon: 5, geo: 6 },
+  lake: { temp: 25, pressure: 20, trend: 13, wind: 12, sky: 10, time: 10, moon: 5, geo: 5 },
+  pond: { temp: 25, pressure: 22, trend: 15, wind: 12, sky: 8, time: 10, moon: 5, geo: 3 },
+  sea: { temp: 25, pressure: 20, trend: 15, wind: 12, sky: 8, time: 10, moon: 5, geo: 5 },
+};
+// v0.6 影子模型：只算对比，不替换 v0.5 线上分数。
+export const SHADOW_WEIGHTS = {
+  unknown: { temp: 25, pressure: 15, trend: 15, wind: 10, sky: 8, time: 14, moon: 3, geo: 10 },
+  river: { temp: 25, pressure: 15, trend: 15, wind: 6, sky: 8, time: 14, moon: 3, geo: 14 },
+  reservoir: { temp: 25, pressure: 15, trend: 12, wind: 15, sky: 7, time: 14, moon: 3, geo: 9 },
+  lake: { temp: 25, pressure: 15, trend: 13, wind: 13, sky: 8, time: 14, moon: 3, geo: 9 },
+  pond: { temp: 25, pressure: 18, trend: 15, wind: 14, sky: 6, time: 14, moon: 3, geo: 5 },
+  sea: { temp: 25, pressure: 15, trend: 15, wind: 15, sky: 6, time: 14, moon: 3, geo: 7 },
+};
+// v0.7 线上：鱼种权重 + 时段/水域偏好 + 季节/溶氧修正。没有鱼获校准，先用经验值。
+export const SPECIES_WEIGHTS = {
+  crucian: { temp: 25, pressure: 18, trend: 15, wind: 8, sky: 10, time: 10, moon: 5, geo: 9 },
+  bream: { temp: 25, pressure: 18, trend: 15, wind: 10, sky: 10, time: 10, moon: 5, geo: 7 },
+  culter: { temp: 22, pressure: 15, trend: 12, wind: 13, sky: 13, time: 15, moon: 5, geo: 5 },
+  mandarin: { temp: 24, pressure: 16, trend: 12, wind: 8, sky: 12, time: 13, moon: 5, geo: 10 },
+};
+const SPECIES_TIME_BIAS = {
+  crucian: { dawn: 0, dusk: 0, noon: 0, night: -5, day: 0 },
+  bream: { dawn: 2, dusk: 2, noon: -2, night: -8, day: 0 },
+  culter: { dawn: 4, dusk: 5, noon: -5, night: -6, day: 0 },
+  mandarin: { dawn: 3, dusk: 4, noon: -4, night: 2, day: 0 },
+};
+const SPECIES_HABITAT = {
+  crucian: { river: 1, lake: 2, reservoir: 1, pond: 3, sea: 0, unknown: 0 },
+  bream: { river: 3, lake: 1, reservoir: 1, pond: 0, sea: 0, unknown: 0 },
+  culter: { river: 2, lake: 3, reservoir: 3, pond: -4, sea: 0, unknown: 0 },
+  mandarin: { river: 3, lake: 1, reservoir: 3, pond: 0, sea: 0, unknown: 0 },
+};
+const SPECIES_DO_PENALTY = {
+  crucian: { severe: 0, warn: 0 },
+  bream: { severe: 3, warn: 1 },
+  culter: { severe: 6, warn: 2 },
+  mandarin: { severe: 8, warn: 3 },
+};
+const SPAWN_MONTHS = { crucian: [3, 4, 5], bream: [4, 5, 6], culter: [5, 6, 7], mandarin: [5, 6, 7] };
+const WINTER_BONUS = { crucian: 0, bream: -1, culter: -1, mandarin: -2 };
+
+function speciesTimeBonus(key, kind) { return SPECIES_TIME_BIAS[key]?.[kind] || 0; }
+function speciesHabitatBonus(key, water) { return SPECIES_HABITAT[key]?.[water] || 0; }
+function speciesDoPenalty(key, flags) {
+  const p = SPECIES_DO_PENALTY[key];
+  if (!p) return 0;
+  if (flags.includes('oxygen')) return p.severe;
+  if (flags.includes('oxygenWarn')) return p.warn;
+  return 0;
+}
+function seasonalBonus(key, month) {
+  if (SPAWN_MONTHS[key]?.includes(month)) return 2;
+  if (month >= 9 && month <= 11) return 1;
+  if (month === 12 || month <= 2) return WINTER_BONUS[key] ?? 0;
+  return 0;
+}
+
 const SUB_KEYS = Object.keys(WEIGHTS);
 
 // ───────────────────────── 主函数 ─────────────────────────
@@ -622,6 +745,7 @@ const SUB_KEYS = Object.keys(WEIGHTS);
  * @param {object} [o.flood]    Open-Meteo flood 原始响应，或 null
  * @param {object} [o.oxygen]   城市平均实测溶解氧 { value, unit, count, time, source }；只作用于第一个显示日
  * @param {string} [o.style]    'taiwan' 时用台钓粉饵/虾建议；不传则用通用饵料/路亚建议
+ * @param {string} [o.model]    '0.6' 时计算影子模型（不改 v0.5 分数）；默认 v0.5
  * @param {string} [o.species]  鱼种 key，默认 crucian
  * @param {string} [o.water]    reservoir|lake|river|pond|sea|unknown
  * @param {string} [o.waterSource] osm|user|default
@@ -640,6 +764,12 @@ export function computeForecast(o) {
   const sp = SPECIES.find((x) => x.key === o.species) || SPECIES.find((x) => x.key === DEFAULT_SPECIES);
   const spName = lang === 'en' ? sp.en : sp.name;
   const water = WATER_TYPES.includes(o.water) ? o.water : 'unknown';
+  const model = o.model === '0.6' ? '0.6' : o.model === '0.5' ? '0.5' : '0.7';
+  const weights = model === '0.6'
+    ? (SHADOW_WEIGHTS[water] || WEIGHTS)
+    : model === '0.5'
+      ? (WATER_WEIGHTS[water] || WEIGHTS)
+      : (SPECIES_WEIGHTS[sp.key] || WATER_WEIGHTS[water] || WEIGHTS);
   const ox = o.oxygen && Number.isFinite(o.oxygen.value) ? o.oxygen : null;
   const offMs = (fc.utc_offset_seconds || 0) * 1000;
   const lat = fc.latitude, lon = fc.longitude;
@@ -764,7 +894,8 @@ export function computeForecast(o) {
   const out = {
     place: { name: o.name || '', lat, lon, elevation: fc.elevation ?? null, water, water_source: o.waterSource || (water === 'unknown' ? 'default' : 'user') },
     species: sp.key,
-    model_version: MODEL_VERSION,
+    model_version: model === '0.6' ? SHADOW_MODEL_VERSION : model === '0.5' ? LEGACY_MODEL_VERSION : MODEL_VERSION,
+    weights: { ...weights },
     timezone: fc.timezone || '',
     oxygen: ox ? { ...ox, applied_date: D.time[firstDi] || null } : null,
     days: [],
@@ -775,6 +906,12 @@ export function computeForecast(o) {
     let W = Wf(di);
     if (isSea) { const sst = sstMean(date); if (sst != null) W = sst; }
     if (W == null) continue;
+    let Wprev = null;
+    if (di > 0) {
+      if (isSea) { const sstPrev = sstMean(D.time[di - 1]); Wprev = sstPrev != null ? sstPrev : Wf(di - 1); }
+      else Wprev = Wf(di - 1);
+    }
+    const dW = Wprev != null ? W - Wprev : null;
     // 结冰提示：W ≤ 2 且「前 5 天」（d−1..d−5，有几天算几天）最低气温全 < −5
     const mins = [];
     for (let k = 1; k <= 5; k++) if (di - k >= 0 && D.temperature_2m_min?.[di - k] != null) mins.push(D.temperature_2m_min[di - k]);
@@ -808,18 +945,30 @@ export function computeForecast(o) {
       const put = (k, r) => { sub[k] = r.s; why[k] = r.reason; };
       const st = sTemp(W, sp);
       put('temp', { s: st, reason: L.temp(W, spName, sp.opt_lo, sp.opt_hi, st, sp.tmin, sp.tmax) });
-      put('pressure', sPressure(P[i], i >= 3 ? P[i - 3] : null, i >= 24 ? P[i - 24] : null, temp[i], wind[i], L, pLow, pHigh, pHyp));
-      put('trend', sTrend(dT, season, L));
+      put('pressure', model === '0.6'
+        ? sPressureShadow(P[i], i >= 3 ? P[i - 3] : null, i >= 24 ? P[i - 24] : null, temp[i], wind[i], L, pLow, pHigh, pHyp)
+        : sPressure(P[i], i >= 3 ? P[i - 3] : null, i >= 24 ? P[i - 24] : null, temp[i], wind[i], L, pLow, pHigh, pHyp));
+      put('trend', model === '0.6' ? sTrendShadow(dW, season, L) : sTrend(dT, season, L));
       put('wind', sWind(v, wdir[i], season, L, lang));
       put('sky', sSky(cloud[i], prec[i], code[i], season, L));
-      put('time', sTime(t, hourCtx(t), season, L));
+      const timeR = model === '0.6' ? sTimeShadow(t, hourCtx(t), season, L) : sTime(t, hourCtx(t), season, L);
+      if (model === '0.7') {
+        const tb = speciesTimeBonus(sp.key, timeR.kind);
+        if (tb) timeR.s = clamp(timeR.s + tb);
+      }
+      put('time', timeR);
       put('moon', sMoon(t * 60000 - offMs, t, m.sl != null ? tide : null, tideRange, m.cur ?? null, m.period ?? null, L));
-      put('geo', sGeo(water, season, v ?? 3.0, r48, wave, ft.trend, L));
+      const geoR = sGeo(water, season, v ?? 3.0, r48, wave, ft.trend, L);
+      if (model === '0.7') {
+        const hb = speciesHabitatBonus(sp.key, water);
+        if (hb) { geoR.s = clamp(geoR.s + hb); geoR.reason += L.fishPref; }
+      }
+      put('geo', geoR);
       // §3.9 水温闸门：g = 0.5 + 0.5·S_temp/100；结冰且鲫鱼（冰钓）g ≥ 0.7。闸门在硬封顶之前，sub.temp 不受影响
       let g = 0.5 + 0.5 * sub.temp / 100;
       if (ice && sp.key === 'crucian') { g = Math.max(g, 0.7); why.temp += L.iceMode; }
       let h = 0;
-      for (const k of SUB_KEYS) h += WEIGHTS[k] * sub[k] / 100;
+      for (const k of SUB_KEYS) h += weights[k] * sub[k] / 100;
       h *= g;
       // §4 硬封顶
       const flags = [];
@@ -835,6 +984,10 @@ export function computeForecast(o) {
         else if (measuredOxygen.value < 5) flags.push('oxygenWarn');
       } else if (oxr.severe) { h = Math.min(h, 45); flags.push('oxygen'); }
       if (oxr.iceLow) flags.push('oxygenIce');
+      if (model === '0.7') {
+        const pen = speciesDoPenalty(sp.key, flags);
+        if (pen) h = Math.max(0, h - pen);
+      }
       for (const f of flags) (safetyHits[f] = safetyHits[f] || []).push(t);
       hours.push({ t: fmtISO(t), h, g, sub, why, flags });
     }
@@ -848,6 +1001,7 @@ export function computeForecast(o) {
     const top = hours.map((x) => x.hs).sort((a, b) => b - a).slice(0, 6);
     const aAll = hours.reduce((a, b) => a + b.hs, 0) / hours.length;
     let score = Math.round(0.6 * top.reduce((a, b) => a + b, 0) / top.length + 0.4 * aAll);
+    if (model === '0.7') score = clamp(Math.round(score + seasonalBonus(sp.key, +date.slice(5, 7))));
     // §6 危险封顶：雷暴 ≥3h 或（海边）浪 ≥2.5 m ≥3h → ≤45；否则雷暴 1–2h 或任一小时阵风 7 级 → ≤60
     const nHit = (k) => (safetyHits[k] || []).length;
     let dayCap = null;
@@ -888,7 +1042,7 @@ export function computeForecast(o) {
       else advice.push(L.spotStrong);
     }
     const band = W < 12 ? 'cold' : W <= 22 ? 'mid' : 'warm';
-    if (o.style === 'taiwan') advice.push((sp.key === 'culter' || sp.key === 'mandarin') ? L.taiwanPredator[band] : L.taiwanBait[band]);
+    if (o.style === 'taiwan') advice.push(sp.lure ? L.taiwanPredator[band] : L.taiwanBait[band]);
     else advice.push(sp.lure ? L.lure[band] : L.bait[band]);
     const dayTides = tide.filter((x) => x.t >= ds && x.t < ds + 1440).map((x) => ({ t: fmtHM(x.t), kind: x.kind, level: x.v }));
     if (water === 'sea') advice.push(dayTides.length ? L.tides(dayTides) : L.noTides);
@@ -920,6 +1074,7 @@ export function computeForecast(o) {
       precip: D.precipitation_sum?.[di] ?? null,
       sunrise: D.sunrise?.[di] ? fmtHM(localMin(D.sunrise[di])) : null, sunset: D.sunset?.[di] ? fmtHM(localMin(D.sunset[di])) : null, ...dayCtxOut,
       best_hour: bh.t,
+      best_why: bh.why,
       gate: Math.round(bh.g * 100) / 100,
       tides: dayTides,
       discharge_trend: ft.trend,

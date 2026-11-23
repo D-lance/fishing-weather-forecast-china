@@ -204,6 +204,7 @@ fs.writeFileSync(path.join(DIST, 'app.js'), APP);
 for (const [f, src] of Object.entries(MODULES)) fs.writeFileSync(path.join(DIST, f), src);
 // 静态资源（og.png / logo-*.png，由 tools/make-og.mjs 生成）+ manifest
 fs.cpSync(path.join(ROOT, 'web', 'assets'), path.join(DIST, 'assets'), { recursive: true });
+fs.cpSync(path.join(ROOT, 'web', 'vendor'), path.join(DIST, 'vendor'), { recursive: true });
 // 城市平均溶解氧等运行数据（由 tools/fetch-oxygen.mjs 生成）
 const DATA_DIR = path.join(ROOT, 'web', 'data');
 if (fs.existsSync(DATA_DIR)) fs.cpSync(DATA_DIR, path.join(DIST, 'data'), { recursive: true });
