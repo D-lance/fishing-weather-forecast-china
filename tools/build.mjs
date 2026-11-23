@@ -1,7 +1,7 @@
 // fish.satloot.com 双语构建（照 trx-site/tools/build.mjs）：web/index.html（中文，唯一源）+ web/app.js + web/engine.js → site/
 //   site/index.html      中文：原样 + canonical/hreflang + 首访语言跳转脚本
 //   site/en/index.html   英文：按 i18n/en.json 逐段整句翻译，<html lang="en">，meta 全英文，相对地址改根绝对
-//   site/engine.js       评分引擎；若 fishing-forecast-skill/assets/species.json 存在，用它替换内置鱼种表
+//   site/engine.js       评分引擎；若 fixtures/species.json（或 FISH_SPECIES_JSON）存在，用它替换内置鱼种表
 //   site/app.js          import './engine.js' 改成带内容哈希的地址（动态文案在 app.js 里按 <html lang> 自选）
 //   site/sitemap.xml / robots.txt / manifest.json
 // 用法：node tools/build.mjs
@@ -19,8 +19,8 @@ const LS_KEY = 'satloot.lang';
 const OG_IMAGE = `${ORIGIN}/assets/og.png`;      // 1200×630，tools/make-og.mjs 生成，源文件在 web/assets/
 const LOGO_512 = `${ORIGIN}/assets/logo-512.png`;
 const THEME = '#f7f6f3';
-// 鱼种表：技能仓库的 species.json 存在就以它为准（构建时拷贝进 engine.js），否则用 engine.js 内置的 model.md §5
-const SPECIES_JSON = process.env.FISH_SPECIES_JSON || 'D:/CLAUDE/fishing-forecast-skill/assets/species.json';
+// 鱼种表：fixtures/species.json（或 FISH_SPECIES_JSON）存在就以它为准（构建时拷进 engine.js），否则用 engine.js 内置的 model.md §5
+const SPECIES_JSON = process.env.FISH_SPECIES_JSON || path.join(ROOT, 'fixtures', 'species.json');
 
 const SRC = fs.readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8');
 const DICT = JSON.parse(fs.readFileSync(path.join(ROOT, 'i18n', 'en.json'), 'utf8'));
@@ -139,7 +139,7 @@ function jsonld(html, lang) {
 // 首访语言跳转：只在 / 上跑；记过选择就不跳；浏览器语言不以 zh 开头才跳 /en/
 const REDIRECT = `  <script>(function(){try{if(!/^https?:$/.test(location.protocol))return;if(localStorage.getItem(${JSON.stringify(LS_KEY)}))return;var n=navigator.language||(navigator.languages||[])[0]||'';if(n&&!/^zh/i.test(n))location.replace('/en/'+location.search+location.hash)}catch(e){}})();</script>\n`;
 // 语言切换点击记忆
-const LANG_SCRIPT = `  <script>document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('.lang-switch');if(a){try{localStorage.setItem(${JSON.stringify(LS_KEY)},a.getAttribute('lang'))}catch(x){}}});</script>\n`;
+const LANG_SCRIPT = `  <script>document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('.lang-switch');if(!a)return;try{localStorage.setItem(${JSON.stringify(LS_KEY)},a.getAttribute('lang'))}catch(x){}var h=a.getAttribute('href');if(h&&(location.search||location.hash)){var u=h+location.search+location.hash;if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();location.href=u}else{a.href=u}}});</script>\n`;
 
 function mustReplace(html, from, to, what) {
   if (!html.includes(from)) throw new Error(`build: 源里找不到 ${what}：${from}`);
@@ -184,6 +184,7 @@ zh = mustReplace(zh, '  <script type="module" src="app.js"></script>', LANG_SCRI
 const r = translate(SRC, DICT);
 let en = r.html;
 en = mustReplace(en, '<html lang="zh-CN">', '<html lang="en">', '<html lang>');
+en = mustReplace(en, '<link rel="manifest" href="/manifest.json">', '<link rel="manifest" href="/en/manifest.json">', 'manifest 链接');
 en = mustReplace(en, '  <link rel="icon"', headLinks('en') + '  <link rel="icon"', 'favicon 行');
 en = en.replace(/<a class="lang-switch"[^>]*>[^<]*<\/a>/, '<a class="lang-switch" href="/" hreflang="zh-CN" lang="zh-CN" data-nolang>中文</a>');
 if (!en.includes('hreflang="zh-CN" lang="zh-CN"')) throw new Error('build: 源里没有 .lang-switch');
@@ -205,11 +206,17 @@ for (const [f, src] of Object.entries(MODULES)) fs.writeFileSync(path.join(DIST,
 fs.cpSync(path.join(ROOT, 'web', 'assets'), path.join(DIST, 'assets'), { recursive: true });
 // IndexNow 密钥文件（32 位十六进制 .txt）必须在站根：搜索引擎只认密钥文件所在目录之下的 URL。源文件放 assets/，构建时再拷一份到根。
 for (const f of fs.readdirSync(path.join(ROOT, 'web', 'assets'))) if (/^[0-9a-f]{32}.txt$/.test(f)) fs.copyFileSync(path.join(path.join(ROOT, 'web', 'assets'), f), path.join(DIST, f));
-fs.writeFileSync(path.join(DIST, 'manifest.json'), JSON.stringify({
-  name: '今日鱼情', short_name: '今日鱼情', lang: 'zh-CN', start_url: '/', scope: '/', display: 'browser',
-  background_color: THEME, theme_color: THEME,
+const manifest = (lang) => JSON.stringify({
+  name: lang === 'en' ? 'Fishing Weather Forecast' : '今日鱼情',
+  short_name: lang === 'en' ? 'Fishing Forecast' : '今日鱼情',
+  lang: lang === 'en' ? 'en' : 'zh-CN',
+  start_url: lang === 'en' ? '/en/' : '/',
+  scope: lang === 'en' ? '/en/' : '/',
+  display: 'browser', background_color: THEME, theme_color: THEME,
   icons: [{ src: '/assets/logo-192.png', sizes: '192x192', type: 'image/png' }, { src: '/assets/logo-512.png', sizes: '512x512', type: 'image/png' }],
-}, null, 2) + '\n');
+}, null, 2) + '\n';
+fs.writeFileSync(path.join(DIST, 'manifest.json'), manifest('zh'));
+fs.writeFileSync(path.join(DIST, 'en', 'manifest.json'), manifest('en'));
 
 const today = new Date().toISOString().slice(0, 10);
 const alt = `<xhtml:link rel="alternate" hreflang="zh-CN" href="${ORIGIN}/"/><xhtml:link rel="alternate" hreflang="en" href="${ORIGIN}/en/"/><xhtml:link rel="alternate" hreflang="x-default" href="${ORIGIN}/"/>`;

@@ -24,7 +24,7 @@
 
 ## 鱼情评分怎么算
 
-完整口径见 [docs/model.md](docs/model.md)（网页 JS 与另一个 Python 版本共用同一份公式，改公式先改这个文件）。简单说：
+完整口径见 [docs/model.md](docs/model.md)（网页 JS 与另一个 Python 版本共用同一份公式，改公式先改这个文件）。v0.4 在 v0.3 基础上增加：`surface_pressure` 海拔修正、Flood API 径流趋势、海钓潮差/流速/浪周期、低氧风险提示和季节/产卵建议；没有新数据时评分保持 v0.3 行为。简单说：
 
 1. **小时分**：每个小时按八项打分再加权求和，权重是 水温 25、气压 20、温变 15、风 10、天空 10、时段 10、月相 / 潮汐 5、水域 5。水温按所选鱼种的适宜区间打分；气压看高低和 24 小时变化（急升急降都扣分）；早晚晨昏时段加分。
 2. **水温闸门与危险封顶**：水温远离鱼种能活动的范围时整体打折；雷暴、大风、大浪的小时直接封顶。
@@ -37,7 +37,7 @@
 
 | 项目 | 用途 | 许可 |
 |---|---|---|
-| [Open-Meteo](https://open-meteo.com/) | 天气、海况、潮位预报（浏览器直连，免 key） | 数据 CC BY 4.0 |
+| [Open-Meteo](https://open-meteo.com/) | 天气（含 `surface_pressure`）、海况/潮位/海流/浪周期、河道径流（Flood API）；浏览器直连，免 key | 数据 CC BY 4.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright)（Nominatim、Overpass、底图瓦片） | 地名搜索、判断水域类型、英文底图 | ODbL |
 | 高德地图 | 中文底图瓦片 | 版权归高德所有，仅作底图展示 |
 | [SunCalc](https://github.com/mourner/suncalc) | 日出日落、月相、月出月落（内联于 `web/engine.js`） | BSD-2-Clause |
@@ -50,9 +50,12 @@
 ```
 web/            网页源码：index.html（中文，唯一源）、app.js（界面）、engine.js（鱼情引擎）、coord.js（高德坐标换算）、assets/
 i18n/en.json    英文词典，构建时整句替换生成英文页
-tools/          build.mjs（构建 site/）、check-fixtures.mjs（与 Python 版对分）、test-coord.mjs、make-og.mjs
+tools/          build.mjs（构建 site/）、test-engine.mjs（引擎回归）、check-fixtures.mjs（与 Python 版对分）、test-coord.mjs、make-og.mjs
 android/        安卓 App：原生 WebView 壳，把 site/ 打包进 APK
-docs/           评分模型说明、截图
+docs/           model.md（评分口径）、impl-notes.md（实现细节）、测试用例/、截图
+fixtures/       Python 基准对分样例说明（见 fixtures/README.md）
+CLAUDE.md       项目约定与构建/验证命令
+.claude/        开发/验证规则与 /acceptance 命令
 serve-dev.mjs   本地预览服务器
 ```
 
@@ -65,7 +68,9 @@ serve-dev.mjs   本地预览服务器
 ```bash
 node tools/build.mjs      # 生成 site/（中文 / 和英文 /en/）
 node serve-dev.mjs        # 打开 http://127.0.0.1:8791 预览
+node tools/test-engine.mjs # 引擎回归（合成 Open-Meteo 数据）
 node tools/test-coord.mjs # 坐标换算自测
+node tools/check-fixtures.mjs # 与 Python 基准对分（需要 fixtures/ 样例）
 ```
 
 `site/` 是纯静态文件，放到任意静态托管即可。

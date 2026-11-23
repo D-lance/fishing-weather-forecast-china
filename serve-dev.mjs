@@ -11,8 +11,12 @@ const MIME = {
   '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
 };
 http.createServer((req, res) => {
-  let f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(ROOT)) { res.writeHead(403); res.end('403'); return; }
+  let pathname;
+  try { pathname = decodeURIComponent(req.url.split('?')[0]); }
+  catch { res.writeHead(400); res.end('400'); return; }
+  let f = path.join(ROOT, pathname);
+  const rel = path.relative(ROOT, f);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) { res.writeHead(403); res.end('403'); return; }
   if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, 'index.html');
   if (!fs.existsSync(f)) { res.writeHead(404); res.end('404'); return; }
   res.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-store' });

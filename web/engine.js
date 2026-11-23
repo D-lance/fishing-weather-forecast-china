@@ -1,7 +1,7 @@
 // 今日鱼情 · 评分引擎（纯函数，不碰 DOM；浏览器 <script type="module"> 与 Node 都能 import）
 //
-// 唯一口径：D:\CLAUDE\fishing-forecast-skill\references\model.md（鱼情模型 v0.3）+ 同目录 impl-notes.md。
-// 公式、权重、鱼种表、输出结构全部按该文件实现；Python 版（同目录 skill 的 scripts/）是回归基准，
+// 唯一口径：docs/model.md（鱼情模型 v0.4）+ docs/impl-notes.md。
+// 公式、权重、鱼种表、输出结构全部按该文件实现；Python 版（外部 skill 的 scripts/）是回归基准，
 // 两端对同一份 fixture 算出的分数差应 ≤ 1。改公式先改 model.md，再两端一起改。
 //
 // 用法：
@@ -12,18 +12,28 @@
 // 时间口径：Open-Meteo 以 timezone=auto 返回本地钟点字符串（无偏移），本文件把它当作「本地分钟数」
 // （按 UTC 解析得到的伪时间戳 / 60000），需要真实时刻（日月计算）时再减去 utc_offset_seconds。
 
-export const MODEL_VERSION = '0.3';
+export const MODEL_VERSION = '0.4';
 
 // ───────────────────────── 数据源（§1） ─────────────────────────
-const HOURLY = 'temperature_2m,relative_humidity_2m,pressure_msl,cloud_cover,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
+const HOURLY = 'temperature_2m,relative_humidity_2m,pressure_msl,surface_pressure,cloud_cover,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
 const DAILY = 'sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum';
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
+// forecast_days=8：热季会把 d+1 00:00–02:00 算进最后一天，必须多要一天才能拿到那几个小时；
+// 网页端用 localToday() 把“今天”传给 computeForecast，避免把多出来的第 8 天显示出来。
 export function forecastUrl(lat, lon) {
-  return `https://api.open-meteo.com/v1/forecast?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=7&forecast_days=7&wind_speed_unit=ms&hourly=${HOURLY}&daily=${DAILY}`;
+  return `https://api.open-meteo.com/v1/forecast?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=7&forecast_days=8&wind_speed_unit=ms&hourly=${HOURLY}&daily=${DAILY}`;
 }
 export function marineUrl(lat, lon) {
-  return `https://marine-api.open-meteo.com/v1/marine?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=1&forecast_days=7&hourly=wave_height,sea_surface_temperature,sea_level_height_msl`;
+  return `https://marine-api.open-meteo.com/v1/marine?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=1&forecast_days=8&hourly=wave_height,wave_period,sea_surface_temperature,sea_level_height_msl,ocean_current_velocity,ocean_current_direction`;
+}
+/** Flood API：河流径流趋势（GloFAS 最近网格；湖泊/海边可能为 null）。 */
+export function floodUrl(lat, lon) {
+  return `https://flood-api.open-meteo.com/v1/flood?latitude=${r4(lat)}&longitude=${r4(lon)}&daily=river_discharge&past_days=7&forecast_days=8`;
+}
+/** 按 forecast 响应的时区偏移算“当地今天”（YYYY-MM-DD），不依赖浏览器/服务器本地日期。 */
+export function localToday(fc, ms = Date.now()) {
+  return new Date(ms + (fc?.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 10);
 }
 export function geocodeUrl(name, lang = 'zh') {
   return `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&language=${lang === 'en' ? 'en' : 'zh'}&count=8`;
@@ -79,7 +89,7 @@ export function classifyWater(overpass, hasMarine) {
 export const WATER_TYPES = ['reservoir', 'lake', 'river', 'pond', 'sea', 'unknown'];
 
 // ───────────────────────── 鱼种表（§5） ─────────────────────────
-// 构建时若 fishing-forecast-skill/assets/species.json 存在，tools/build.mjs 会用它替换下面两个标记之间的数组。
+// 构建时若 fixtures/species.json（或 FISH_SPECIES_JSON）存在，tools/build.mjs 会用它替换下面两个标记之间的数组。
 const SPECIES_TABLE = /*SPECIES_BEGIN*/[
   { "key": "crucian", "name": "鲫鱼", "tmin": 5, "opt_lo": 15, "opt_hi": 25, "tmax": 30 },
   { "key": "carp", "name": "鲤鱼", "tmin": 10, "opt_lo": 18, "opt_hi": 28, "tmax": 32 },
@@ -259,6 +269,8 @@ const SAFETY = {
     rain: '强降水，河道注意涨水',
     heat: '气温 35℃ 以上，防中暑，多带水、找树荫',
     ice: '可能结冰：冰钓安全第一，冰厚不到 10 厘米不上冰',
+    oxygen: '高温、低压、无风，浅水容易缺氧浮头；找活水、增氧机或深水，别钓浅滩',
+    oxygenIce: '冰下可能缺氧，注意鱼浮头；冰钓先测冰厚',
   },
   en: {
     thunder: 'Thunderstorm: stay away from the water and lower carbon rods',
@@ -267,6 +279,8 @@ const SAFETY = {
     rain: 'Heavy rain: watch for rising rivers',
     heat: 'Air ≥ 35°C: beware of heatstroke, bring water, find shade',
     ice: 'Possible ice: safety first, never go on ice thinner than 10 cm',
+    oxygen: 'Hot, low pressure and calm: shallow water may lose oxygen; fish deeper or near moving/aerated water',
+    oxygenIce: 'Oxygen may run low under ice; watch for gasping fish; test ice thickness',
   },
 };
 
@@ -293,12 +307,23 @@ const T = {
     time: { dawn: '早口：日出前后，一天的黄金时段', dusk: '晚口：日落前后，黄金时段', noon: { hot: '中午：天热太晒，鱼躲深水', mild: '中午：口一般', cold: '中午：天冷时中午水最暖，最好' }, night: { hot: '夜里：天热夜钓凉快，鱼靠边找食', mild: '夜里：口一般', cold: '夜里：天冷，鱼基本不动' }, day: '白天一般时段' },
     major: '，赶上月亮大时段（月亮正当头或在脚下前后），加分', iceMode: '；冰钓鲫鱼照样能钓，打折少一些', minor: '，赶上月亮小时段（月出、月落前后），加分',
     moon: (a, d) => `农历约${Math.min(30, Math.max(1, Math.round(a) + 1))}：${d <= 2 ? '接近初一或十五，鱼口活跃' : d <= 4 ? '离初一、十五不远' : '半月前后，影响不大'}`,
-    tide: { slack: '；潮水：平潮，水不动', run: '；潮水：刚涨潮或刚落潮，水流起来了', mid: '；潮水：涨落中段' },
+    tide: {
+      slack: '；潮水：平潮，水不动', run: '；潮水：刚涨潮或刚落潮，水流起来了', mid: '；潮水：涨落中段',
+      detail: (r, c, p) => {
+        const bits = [];
+        if (r != null) bits.push(`潮差约 ${r.toFixed(1)} 米`);
+        if (c != null) bits.push(`流速约 ${c.toFixed(1)} 公里/小时`);
+        if (p != null) bits.push(`浪周期约 ${p.toFixed(0)} 秒`);
+        return bits.length ? `；${bits.join('，')}` : '';
+      },
+    },
     geo: {
       riverFlood: (r) => `河道：近两天下雨 ${r.toFixed(0)} 毫米，涨水浑浊，找回水湾`,
       river: '河道：活水溶氧足，正常', reservoirHot: '水库：天热时深水区凉快，有利', reservoir: '水库：水面大，找结构',
       lake: '湖泊：正常', pondHot: '小塘天热没风，容易缺氧', pond: '池塘：鱼多，正常',
       seaRough: (w) => `浪高 ${w.toFixed(1)} 米，风浪偏大`, sea: '海面平稳', unknown: '没认出是什么水，按一般水体算，请在上面手动选一下',
+      riverRise: '，流量在涨，鱼可能靠边', riverFall: '，流量在退，鱼往深水和主河道退',
+      reservoirRise: '，入库流量在涨，鱼可能进湾、靠边', reservoirFall: '，水位在退，鱼往深水退',
     },
     layer: { cold: '水层：水温低，钓深水底层，午后找向阳面', cool: '水层：中下层为主，向阳浅滩，午后最好', mild: '水层：早晚钓浅滩，中午转深水', hot: '水层：早晚和夜里钓浅水，白天找深水、树荫、进水口' },
     spot: (from, to) => `钓位：风从${from}来，钓${to}岸（下风岸），风把食物和氧气吹过去`,
@@ -309,6 +334,13 @@ const T = {
     water: {
       reservoir: '找位：回水湾、岬角、老河道', river: '找位：回水湾、缓流区、桥墩下游', lake: '找位：草边、进出水口',
       pond: '找位：增氧机附近、进水口、深水区',
+    },
+    seasonal: {
+      spring: '季节：春季繁殖期，鲫鱼、鲤鱼靠浅滩草边，尽量少打扰，早晚更好',
+      summer: '季节：夏季高温，早晚和夜间为主，白天钓深水、树荫、进水口',
+      summerSnakehead: '季节：黑鱼护崽期，看到鱼群别下竿',
+      autumn: '季节：秋季育肥，鱼口好，找浅滩、结构、回水湾，降温前抓紧',
+      winter: '季节：冬季鱼扎深水，钓深、向阳、背风；冰钓先测冰厚',
     },
     tides: (list) => `潮水：当天 ${list.map((e) => (e.kind === 'high' ? '高潮 ' : '低潮 ') + e.t).join('、')}；平潮前后半小时口差，涨落潮开始后 0.5–2.5 小时水流起来最好`,
     noTides: '潮水：没有潮位数据，以当地潮汐表为准',
@@ -336,12 +368,23 @@ const T = {
     time: { dawn: 'Morning bite: around sunrise, prime time', dusk: 'Evening bite: around sunset, prime time', noon: { hot: 'Midday: too sunny in the heat, fish go deep', mild: 'Midday: average', cold: 'Midday: the water is warmest now in cold weather, best' }, night: { hot: 'Night: cool night fishing, fish feed near the bank', mild: 'Night: average', cold: 'Night: too cold, fish barely move' }, day: 'Ordinary daytime hour' },
     major: ', plus a major moon period (moon overhead or underfoot)', iceMode: '; crucian ice fishing still works, marked down less', minor: ', plus a minor moon period (moonrise or moonset)',
     moon: (a, d) => `Moon ${Math.round(a)} days old: ${d <= 2 ? 'near new or full moon, fish are active' : d <= 4 ? 'close to new or full moon' : 'around half moon, little effect'}`,
-    tide: { slack: '; tide: slack water, no current', run: '; tide: just turned, current picking up', mid: '; tide: mid-flow' },
+    tide: {
+      slack: '; tide: slack water, no current', run: '; tide: just turned, current picking up', mid: '; tide: mid-flow',
+      detail: (r, c, p) => {
+        const bits = [];
+        if (r != null) bits.push(`tide range ~${r.toFixed(1)} m`);
+        if (c != null) bits.push(`current ~${c.toFixed(1)} km/h`);
+        if (p != null) bits.push(`wave period ~${p.toFixed(0)} s`);
+        return bits.length ? `; ${bits.join(', ')}` : '';
+      },
+    },
     geo: {
       riverFlood: (r) => `River: ${r.toFixed(0)} mm of rain in 48 h, high muddy water, look for back-eddies`,
       river: 'River: flowing, oxygen-rich, normal', reservoirHot: 'Reservoir: deep water stays cool in the heat', reservoir: 'Reservoir: big water, fish structure',
       lake: 'Lake: normal', pondHot: 'Small water, hot and still: low oxygen', pond: 'Pond: dense fish, normal',
       seaRough: (w) => `Waves ${w.toFixed(1)} m, rough`, sea: 'Calm sea', unknown: 'Could not tell what water this is; scored as generic water, please pick it above',
+      riverRise: ', flow rising, fish may move to the bank', riverFall: ', flow falling, fish move to deeper water and the main channel',
+      reservoirRise: ', inflow rising, fish may move into bays and to the bank', reservoirFall: ', water level falling, fish move deeper',
     },
     layer: { cold: 'Depth: deep, near the bottom; sunny banks in the afternoon', cool: 'Depth: mid to low; sunny shallows, afternoon best', mild: 'Depth: shallows morning and evening, deep water at midday', hot: 'Depth: shallows at dawn, dusk and night; deep water, shade and inflows by day' },
     spot: (from, to) => `Spot: wind from the ${from}, fish the ${to} bank (downwind); wind pushes food and oxygen there`,
@@ -352,6 +395,13 @@ const T = {
     water: {
       reservoir: 'Where: back bays, points, old river channels', river: 'Where: back-eddies, slow current, downstream of bridge piers', lake: 'Where: weed edges, inflows and outflows',
       pond: 'Where: near aerators, inflows, deep holes',
+    },
+    seasonal: {
+      spring: 'Season: spring spawning; crucian and carp hold on shallow weed edges, keep disturbance low, dawn/dusk best',
+      summer: 'Season: summer heat; fish dawn, dusk and night, deep water, shade and inflows by day',
+      summerSnakehead: 'Season: snakehead guarding fry; do not cast at the school',
+      autumn: 'Season: autumn feeding; fish shallows, structure and back bays before the cold',
+      winter: 'Season: winter; fish deep, sunny and sheltered water; test ice before ice fishing',
     },
     tides: (list) => `Tide today: ${list.map((e) => (e.kind === 'high' ? 'high ' : 'low ') + e.t).join(', ')}. The bite slows ±30 min around slack water; 0.5–2.5 h into the flood/ebb is best`,
     noTides: 'Tide: no tide data here, check a local tide table',
@@ -371,12 +421,53 @@ function sTemp(W, sp) {
   return clamp(s);
 }
 
-function sPressure(P, P3, P24, tempC, v, L) {
+function pressureNormal(elevation) {
+  const h = Number.isFinite(elevation) ? Math.max(0, elevation) : 0;
+  return 1013.25 * Math.pow(1 - 2.25577e-5 * h, 5.25588);
+}
+function floodTrend(flood, date) {
+  const d = flood && flood.daily;
+  if (!d || !Array.isArray(d.time) || !Array.isArray(d.river_discharge)) return { trend: 'unknown', q: null };
+  const i = d.time.indexOf(date);
+  const q = i >= 0 ? d.river_discharge[i] : null;
+  if (i <= 0 || q == null || d.river_discharge[i - 1] == null) return { trend: 'unknown', q };
+  const prev = d.river_discharge[i - 1];
+  const pct = (q - prev) / Math.max(Math.abs(prev), 0.1);
+  return { trend: pct > 0.15 ? 'rising' : pct < -0.15 ? 'falling' : 'stable', q };
+}
+function tideRangeForDay(mar, date) {
+  let min = Infinity, max = -Infinity;
+  for (let h = 0; h < 24; h++) {
+    const m = mar[`${date}T${pad(h)}:00`];
+    if (m && m.sl != null) { min = Math.min(min, m.sl); max = Math.max(max, m.sl); }
+  }
+  return min === Infinity ? null : max - min;
+}
+function rangeScore(r) { return r == null ? null : r >= 2 ? 100 : r >= 1 ? 80 : r >= 0.5 ? 60 : 40; }
+function currentScore(c) { return c == null ? null : c < 0.2 ? 60 : c <= 2.0 ? 100 : c <= 4.0 ? 70 : 40; }
+function periodScore(p) { return p == null ? null : p < 3 ? 60 : p < 8 ? 80 : p <= 12 ? 100 : 70; }
+function oxygenRisk({ water, season, wind, P, pNorm, t, ice }) {
+  const tod = ((t % 1440) + 1440) % 1440;
+  const night = tod < 480 || tod >= 1200;
+  const smallWater = water === 'pond' || water === 'lake';
+  const severe = smallWater && !ice && season === 'hot' && wind != null && wind < 2
+    && P != null && pNorm != null && P < pNorm - 5 && night;
+  return { severe, iceLow: ice && smallWater };
+}
+function seasonalAdvice(date, sp, L) {
+  const month = Number(String(date).slice(5, 7));
+  if (month >= 3 && month <= 5) return L.seasonal.spring;
+  if (month >= 6 && month <= 8) return sp.key === 'snakehead' ? L.seasonal.summerSnakehead : L.seasonal.summer;
+  if (month >= 9 && month <= 11) return L.seasonal.autumn;
+  return L.seasonal.winter;
+}
+
+function sPressure(P, P3, P24, tempC, v, L, low = 1000, high = 1030, hypoxia = 1005) {
   if (P == null) return { s: 70, reason: L.pMissing };   // 缺数据按中性 70（与 Python 一致）
   let s = 100;
   const parts = [];
-  if (P < 1000) { s -= Math.min(30, 3 * (1000 - P)); parts.push(L.pLow); }
-  if (P > 1030) { s -= Math.min(20, 2 * (P - 1030)); parts.push(L.pHigh); }
+  if (P < low) { s -= Math.min(30, 3 * (low - P)); parts.push(L.pLow); }
+  if (P > high) { s -= Math.min(20, 2 * (P - high)); parts.push(L.pHigh); }
   const d24 = P24 != null ? P - P24 : null;
   const d3 = P3 != null ? P - P3 : null;
   if (d24 != null) {
@@ -387,7 +478,7 @@ function sPressure(P, P3, P24, tempC, v, L) {
     else parts.push(L.pStable);
   }
   if (d3 != null && d3 <= -1.0 && (d24 == null || d24 > -6)) { s += 5; parts.push(L.pShort); }
-  if (P < 1005 && tempC != null && tempC >= 30 && v != null && v < 2) { s -= 20; parts.push(L.pHypoxia); }
+  if (P < hypoxia && tempC != null && tempC >= 30 && v != null && v < 2) { s -= 20; parts.push(L.pHypoxia); }
   if (!parts.length) parts.push(L.pStable);
   return { s: clamp(s), reason: L.pressure(P, d24, parts) };
 }
@@ -462,7 +553,7 @@ function sTime(t, day, season, L) {
   return { s: clamp(Math.min(100, s + bonus)), reason: slot + extra };
 }
 
-function sMoon(realMs, t, tide, L) {
+function sMoon(realMs, t, tide, range, current, period, L) {
   const a = moonIllumination(realMs).phase * 29.53;
   const d = Math.min(a, Math.abs(a - 14.77), 29.53 - a);
   const ms = d <= 2 ? 100 : d <= 4 ? 75 : 55;
@@ -477,14 +568,34 @@ function sMoon(realMs, t, tide, L) {
   if (nearest <= 30) { T = 60; reason += L.tide.slack; }
   else if (lastBefore != null && t - lastBefore > 30 && t - lastBefore <= 150) { T = 100; reason += L.tide.run; }
   else reason += L.tide.mid;
+  // v0.4：潮差/流速/浪周期折进潮分，不新增权重；缺数据时保持原 T
+  const rs = rangeScore(range), cs = currentScore(current), ps = periodScore(period);
+  const comps = [[T, 0.4]];
+  if (rs != null) comps.push([rs, 0.2]);
+  if (cs != null) comps.push([cs, 0.2]);
+  if (ps != null) comps.push([ps, 0.2]);
+  if (comps.length > 1) {
+    const tw = comps.reduce((a, [, w]) => a + w, 0);
+    T = comps.reduce((a, [v, w]) => a + v * w, 0) / tw;
+  }
+  reason += L.tide.detail(range, current, period);
   return { s: clamp(0.5 * ms + 0.5 * T), reason };
 }
 
-function sGeo(water, season, v, rain48, wave, L) {
+function sGeo(water, season, v, rain48, wave, trend, L) {
   const G = L.geo;
+  const trendReason = (rise, fall) => trend === 'rising' ? rise : trend === 'falling' ? fall : '';
   switch (water) {
-    case 'river': return rain48 > 30 ? { s: 30, reason: G.riverFlood(rain48) } : { s: 80, reason: G.river };
-    case 'reservoir': return season === 'hot' ? { s: 80, reason: G.reservoirHot } : { s: 75, reason: G.reservoir };
+    case 'river': {
+      const flood = rain48 > 30;
+      const s = flood ? 30 : clamp(80 + (trend === 'rising' ? 5 : trend === 'falling' ? -10 : 0));
+      return { s, reason: (flood ? G.riverFlood(rain48) : G.river) + trendReason(G.riverRise, G.riverFall) };
+    }
+    case 'reservoir': {
+      const base = season === 'hot' ? 80 : 75;
+      const s = clamp(base + (trend === 'rising' ? 3 : trend === 'falling' ? -5 : 0));
+      return { s, reason: (season === 'hot' ? G.reservoirHot : G.reservoir) + trendReason(G.reservoirRise, G.reservoirFall) };
+    }
     case 'lake': return { s: 75, reason: G.lake };
     case 'pond': return season === 'hot' && v < 2 ? { s: 50, reason: G.pondHot } : { s: 80, reason: G.pond };
     case 'sea': return wave != null && wave >= 1.5 ? { s: 20, reason: G.seaRough(wave) } : { s: 80, reason: G.sea };
@@ -493,20 +604,21 @@ function sGeo(water, season, v, rain48, wave, L) {
 }
 
 const TIDE_MIN_RANGE = 0.10;
-const WEIGHTS = { temp: 25, pressure: 20, trend: 15, wind: 10, sky: 10, time: 10, moon: 5, geo: 5 };
+export const WEIGHTS = { temp: 25, pressure: 20, trend: 15, wind: 10, sky: 10, time: 10, moon: 5, geo: 5 };
 const SUB_KEYS = Object.keys(WEIGHTS);
 
 // ───────────────────────── 主函数 ─────────────────────────
 /**
  * @param {object} o
- * @param {object} o.forecast   Open-Meteo forecast 原始响应（past_days=7, forecast_days=7）
+ * @param {object} o.forecast   Open-Meteo forecast 原始响应（past_days=7, forecast_days=8）
  * @param {object} [o.marine]   Open-Meteo marine 原始响应，或 null
  * @param {string} [o.species]  鱼种 key，默认 crucian
  * @param {string} [o.water]    reservoir|lake|river|pond|sea|unknown
  * @param {string} [o.waterSource] osm|user|default
  * @param {string} [o.name]     地名
  * @param {string} [o.lang]     zh（口径）| en
- * @param {number} [o.days]     输出天数，默认 7（取 daily 的最后 N 天 = forecast_days）
+ * @param {string} [o.now]      当地今天 YYYY-MM-DD；15 天响应（7 past + 8 forecast）必须传，否则会从最后 N 天开始
+ * @param {number} [o.days]     输出天数，默认 7；传了 now 就从 now 当天起取 N 天
  * @returns §8 结构（另附 sunrise/sunset/ice/alerts、hours[].flags 等界面用的附加字段）
  */
 export function computeForecast(o) {
@@ -529,15 +641,26 @@ export function computeForecast(o) {
     return i >= 0 && i < n && tMin[i] === min ? i : -1;
   };
   const col = (k) => H[k] || [];
-  const temp = col('temperature_2m'), pres = col('pressure_msl'), cloud = col('cloud_cover'), prec = col('precipitation');
+  const temp = col('temperature_2m'), pres = col('pressure_msl'), surf = col('surface_pressure'), cloud = col('cloud_cover'), prec = col('precipitation');
   const code = col('weather_code'), wind = col('wind_speed_10m'), wdir = col('wind_direction_10m'), gust = col('wind_gusts_10m');
+  // v0.4：有 surface_pressure 就用站点气压，并按海拔平移绝对阈值；没有就退回 pressure_msl（旧口径）。
+  const useSurf = surf.some((x) => x != null);
+  const P = useSurf ? surf : pres;
+  const pNorm = pressureNormal(fc.elevation);
+  const pShift = useSurf ? Math.max(0, 1013.25 - pNorm) : 0;
+  const pLow = 1000 - pShift, pHigh = 1030 - pShift, pHyp = 1005 - pShift;
 
   // 海况：按时间字符串对齐
   const hasMarine = marineAvailable(o.marine);
   const mar = {};
   if (hasMarine) {
     const mh = o.marine.hourly;
-    mh.time.forEach((ts, j) => { mar[ts] = { wave: mh.wave_height?.[j], sst: mh.sea_surface_temperature?.[j], sl: mh.sea_level_height_msl?.[j] }; });
+    mh.time.forEach((ts, j) => {
+      mar[ts] = {
+        wave: mh.wave_height?.[j], period: mh.wave_period?.[j], sst: mh.sea_surface_temperature?.[j],
+        sl: mh.sea_level_height_msl?.[j], cur: mh.ocean_current_velocity?.[j],
+      };
+    });
   }
   const isSea = water === 'sea';
   // 潮汐极值（仅 sea 且 sea_level_height_msl 可用）：非空点按时间排好，取局部极值；
@@ -646,6 +769,8 @@ export function computeForecast(o) {
     const ice = W <= 2 && mins.length > 0 && mins.every((x) => x < -5);
     const season = W < 12 ? 'cold' : W <= 26 ? 'mild' : 'hot';
     const dT = Ta[di] != null && di > 0 && Ta[di - 1] != null ? Ta[di] - Ta[di - 1] : null;
+    const ft = floodTrend(o.flood, date);
+    const tideRange = isSea ? tideRangeForDay(mar, date) : null;
 
     const ds = dayStart[di];
     const me = moonEvents(date);
@@ -670,13 +795,13 @@ export function computeForecast(o) {
       const put = (k, r) => { sub[k] = r.s; why[k] = r.reason; };
       const st = sTemp(W, sp);
       put('temp', { s: st, reason: L.temp(W, spName, sp.opt_lo, sp.opt_hi, st, sp.tmin, sp.tmax) });
-      put('pressure', sPressure(pres[i], i >= 3 ? pres[i - 3] : null, i >= 24 ? pres[i - 24] : null, temp[i], wind[i], L));
+      put('pressure', sPressure(P[i], i >= 3 ? P[i - 3] : null, i >= 24 ? P[i - 24] : null, temp[i], wind[i], L, pLow, pHigh, pHyp));
       put('trend', sTrend(dT, season, L));
       put('wind', sWind(v, wdir[i], season, L, lang));
       put('sky', sSky(cloud[i], prec[i], code[i], season, L));
       put('time', sTime(t, hourCtx(t), season, L));
-      put('moon', sMoon(t * 60000 - offMs, t, m.sl != null ? tide : null, L));
-      put('geo', sGeo(water, season, v ?? 3.0, r48, wave, L));
+      put('moon', sMoon(t * 60000 - offMs, t, m.sl != null ? tide : null, tideRange, m.cur ?? null, m.period ?? null, L));
+      put('geo', sGeo(water, season, v ?? 3.0, r48, wave, ft.trend, L));
       // §3.9 水温闸门：g = 0.5 + 0.5·S_temp/100；结冰且鲫鱼（冰钓）g ≥ 0.7。闸门在硬封顶之前，sub.temp 不受影响
       let g = 0.5 + 0.5 * sub.temp / 100;
       if (ice && sp.key === 'crucian') { g = Math.max(g, 0.7); why.temp += L.iceMode; }
@@ -691,6 +816,9 @@ export function computeForecast(o) {
       if (isSea && wave != null && wave >= 2.5) { h = Math.min(h, 15); flags.push('wave'); }
       if (prec[i] != null && prec[i] >= 8) { h = Math.min(h, 35); flags.push('rain'); }
       if (temp[i] != null && temp[i] >= 35) flags.push('heat');
+      const ox = oxygenRisk({ water, season, wind: v, P: P[i], pNorm, t, ice });
+      if (ox.severe) { h = Math.min(h, 45); flags.push('oxygen'); }
+      if (ox.iceLow) flags.push('oxygenIce');
       for (const f of flags) (safetyHits[f] = safetyHits[f] || []).push(t);
       hours.push({ t: fmtISO(t), h, g, sub, why, flags });
     }
@@ -748,9 +876,10 @@ export function computeForecast(o) {
     const dayTides = tide.filter((x) => x.t >= ds && x.t < ds + 1440).map((x) => ({ t: fmtHM(x.t), kind: x.kind, level: x.v }));
     if (water === 'sea') advice.push(dayTides.length ? L.tides(dayTides) : L.noTides);
     else if (water !== 'unknown') advice.push(L.water[water]);
+    advice.push(seasonalAdvice(date, sp, L));
 
     // 安全提示（§4）：每类一天一条；连续命中的小时合成「09:00–11:00」，不连续的用顿号分开「09:00、18:00」；结冰整天一条
-    const order = ['thunder', 'gale', 'wave', 'rain', 'heat'];
+    const order = ['thunder', 'gale', 'wave', 'rain', 'heat', 'oxygen', 'oxygenIce'];
     const alerts = order.filter((k) => safetyHits[k]).map((k) => {
       const ts = safetyHits[k];
       const runs = [[ts[0], ts[0]]];
@@ -776,6 +905,10 @@ export function computeForecast(o) {
       best_hour: bh.t,
       gate: Math.round(bh.g * 100) / 100,
       tides: dayTides,
+      discharge_trend: ft.trend,
+      river_discharge: ft.q,
+      tide_range: tideRange,
+      oxygen_risk: hours.some((x) => x.flags.includes('oxygen')),
       hours: hours.map((x) => ({ t: x.t, h: round1(x.h), hs: round1(x.hs), flags: x.flags })),
     });
   }

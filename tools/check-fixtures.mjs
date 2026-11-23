@@ -1,5 +1,5 @@
 // JS 引擎 ↔ Python 基准对齐检查。
-// 读 fixtures 目录（默认 D:/CLAUDE/fishing-forecast-skill/fixtures）里每一对 <名>.json（{input, forecast, marine}）
+// 读 fixtures 目录（默认仓库根 fixtures/）里每一对 <名>.json（{input, forecast, marine}）
 // 与 <名>.expected.json（Python 端 fishcast.py 生成，是基准），用 web/engine.js 重算，逐项比：
 //   日分、8 个分项、最佳时段分、每小时 h / hs —— 差 ≤ 1 算过；水温差 ≤ 0.15 °C 算过；
 //   day_cap、等级、等级说明、安全提示、建议逐字相等。
@@ -7,11 +7,13 @@
 // 退出码：0 全过；1 有超差；2 目录不存在或没有样例。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { computeForecast } from '../web/engine.js';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const verbose = args.includes('-v');
-const DIR = args.find((a) => !a.startsWith('-')) || 'D:/CLAUDE/fishing-forecast-skill/fixtures';
+const DIR = args.find((a) => !a.startsWith('-')) || path.join(ROOT, 'fixtures');
 const TOL = 1;
 const TOL_W = 0.15;
 
@@ -25,10 +27,12 @@ for (const n of names) {
   const fx = JSON.parse(fs.readFileSync(path.join(DIR, n + '.json'), 'utf8'));
   const exp = JSON.parse(fs.readFileSync(path.join(DIR, n + '.expected.json'), 'utf8'));
   const inp = fx.input || {};
+  // 15 天响应（7 past + 8 forecast）必须从 expected 首日锚定；否则 firstDi = nd - 7 会从明天开始。
+  const anchor = inp.now || exp.days?.[0]?.date;
   const got = computeForecast({
     forecast: fx.forecast, marine: fx.marine || null,
     species: inp.species || inp.sp || exp.species, water: inp.water || inp.w || exp.place?.water,
-    waterSource: inp.water ? 'user' : undefined, name: inp.name || '', now: inp.now,
+    waterSource: inp.water ? 'user' : undefined, name: inp.name || '', now: anchor,
   });
   const gd = new Map(got.days.map((d) => [d.date, d]));
   const stat = { n: 0, max: 0, over: [] };

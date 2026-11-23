@@ -1,7 +1,11 @@
 # 部署脚本和服务器配置（含服务器信息，不开源）
 deploy/
-# 本机 Claude 配置
-.claude/
+# 本机 Claude 配置（共享 rules/commands 要提交）
+.claude/*
+!.claude/rules/
+!.claude/rules/**
+!.claude/commands/
+!.claude/commands/**
 # 网页构建产物（node tools/build.mjs 生成）
 site/
 # Node

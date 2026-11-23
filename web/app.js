@@ -2,8 +2,8 @@
 // 中英文由 <html lang> 决定；页面静态文案在构建期翻译（i18n/en.json），这里只放动态文案。
 // 没有后端：所有请求都从浏览器发出。坐标一律以 WGS-84 保存；只有画到高德底图上时才换成 GCJ-02（coord.js）。
 import {
-  computeForecast, forecastUrl, marineUrl, geocodeUrl, OVERPASS_MIRRORS, overpassQuery,
-  classifyWater, marineAvailable, SPECIES, DEFAULT_SPECIES, WATER_TYPES,
+  computeForecast, forecastUrl, marineUrl, floodUrl, localToday, geocodeUrl, OVERPASS_MIRRORS, overpassQuery,
+  classifyWater, marineAvailable, SPECIES, DEFAULT_SPECIES, WATER_TYPES, WEIGHTS,
 } from './engine.js';
 import { wgs84ToGcj02, gcj02ToWgs84, snapToGeom, geomSpanM, distM } from './coord.js';
 
@@ -25,7 +25,7 @@ const TXT = {
     searching: '正在搜索…', noResult: '没找到，换个说法试试（比如加上省市，或直接在地图上点水面）。', searchErr: '搜索暂时用不了，稍后再试，或直接在地图上点水面。',
     gpsAsk: '正在获取定位…', gpsErr: '定位失败：浏览器没给位置权限，或当前环境不支持定位。', gpsNo: '浏览器不支持定位。',
     mapLoading: '正在加载地图…', mapErr: '地图没加载出来，可以改用上面的搜索。',
-    loadingWx: '正在取天气…', wxErr: '天气数据暂时没取到，稍后再试。',
+    loadingWx: '正在取天气…', wxErr: '天气数据暂时没取到，稍后再试。', noDays: '这段时间没有可用的天气数据，换个钓点或稍后再试。',
     detecting: '正在认附近是什么水…',
     detected: (w) => `认出来是「${w}」，不对可以手动改。`,
     detectNone: '没认出是什么水，请在「水域类型」里手动选一下。',
@@ -33,6 +33,7 @@ const TXT = {
     userWater: (w) => `已手动选「${w}」。`,
     selWater: (n, k, w) => `已选「${n}」（${k}），按${w}来算。在地图上高亮的水面上点一下可以换个位置。`,
     longRiver: (n) => `「${n}」是条长河：请在地图上高亮的河道上点一下你要去的那一段，会自动挪到最近的河面上再算。`,
+    longRiverNoMap: (n) => `地图没加载出来，先按「${n}」离你选中点最近的河段算；想换河段可以再搜一个更具体的地名。`,
     tooFar: '离选中的水面太远，按你点的位置重新算。',
     nearbyLoading: '正在找附近 1.5 公里内有名字的水面…', nearbyTitle: '附近有名字的水面（点一个就按它算）：', nearbyNone: '附近 1.5 公里内没有带名字的水面，就按你点的位置算。',
     nearbyFail: '附近水域没查到，就按你点的位置算；也可以手动选水域类型。', usePoint: '都不是，就按我点的位置', inside: '就在水面上',
@@ -62,7 +63,7 @@ const TXT = {
     searching: 'Searching…', noResult: 'No match. Try another spelling, add the province/city, or tap the water on the map.', searchErr: 'Search is unavailable right now. Try again later, or tap the water on the map.',
     gpsAsk: 'Getting your location…', gpsErr: 'Location failed: permission denied or not supported here.', gpsNo: 'This browser does not support geolocation.',
     mapLoading: 'Loading map…', mapErr: 'Map failed to load; use the search box instead.',
-    loadingWx: 'Getting the weather…', wxErr: 'Could not get the weather right now, please try again later.',
+    loadingWx: 'Getting the weather…', wxErr: 'Could not get the weather right now, please try again later.', noDays: 'No usable weather data for these days; try another spot or come back later.',
     detecting: 'Working out what water this is…',
     detected: (w) => `Looks like a ${w.toLowerCase()}. Change it if that is wrong.`,
     detectNone: 'Could not tell what water this is; please pick the water type yourself.',
@@ -70,6 +71,7 @@ const TXT = {
     userWater: (w) => `Set manually to “${w}”.`,
     selWater: (n, k, w) => `Selected “${n}” (${k}), scored as ${w.toLowerCase()}. Tap the highlighted water on the map to move your spot.`,
     longRiver: (n) => `“${n}” is a long river: tap the stretch you are heading to on the highlighted line, and the spot moves onto the nearest bit of river.`,
+    longRiverNoMap: (n) => `The map did not load; scoring the stretch of “${n}” nearest your selected point. Search for a more specific place to move it.`,
     tooFar: 'Too far from the selected water; scoring the point you tapped instead.',
     nearbyLoading: 'Looking for named water within 1.5 km…', nearbyTitle: 'Named water nearby (tap one to use it):', nearbyNone: 'No named water within 1.5 km; using the point you tapped.',
     nearbyFail: 'Could not look up the water nearby; using the point you tapped. You can also pick the water type yourself.', usePoint: 'None of these, use my point', inside: 'you are on it',
@@ -94,14 +96,13 @@ const TXT = {
     sep: ', ', colon: ': ',
   },
 }[LANG];
-const WEIGHTS = { temp: 25, pressure: 20, trend: 15, wind: 10, sky: 10, time: 10, moon: 5, geo: 5 };
 const LV_COLORS = ['#15803d', '#4d7c0f', '#b45309', '#c2410c', '#b91c1c'];
 const KIND_COLORS = { river: '#2563eb', lake: '#0891b2', reservoir: '#0f766e', sea: '#1e40af', pond: '#65a30d', place: '#78716c' };
 const KIND_ORDER = ['river', 'lake', 'reservoir', 'sea', 'pond', 'place'];
 const fmt = (x) => (x == null ? '—' : (Math.round(x * 10) / 10).toString());
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const fmtDist = (m) => (m < 1 ? TXT.inside : TXT.km(m));
+const fmtDist = (m) => (!Number.isFinite(m) ? '—' : m < 1 ? TXT.inside : TXT.km(m));
 
 // ───────── 状态 ─────────
 const S = {
@@ -111,7 +112,8 @@ const S = {
   wAuto: null,          // 自动结果：null 未开始 / 'pending' / 类型 / 'fail'
   wPreset: null,        // 由所选水体直接决定的类型（搜索结果 / 附近水体），来源记 osm，不再跑 Overpass
   wSel: null,           // 当前选中的水体 {name, kind, water, geom}（WGS-84 GeoJSON），用于高亮与吸附
-  fc: null, marine: null, out: null, sel: 0,
+  fc: null, marine: null, flood: null, out: null, sel: 0,
+  today: null,          // 取到 forecast 时冻结的“当地今天”，跨午夜重算也不漂移
   token: 0,
   basemap: 'amap',
 };
@@ -120,7 +122,11 @@ const S = {
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 隐私模式等，忽略 */ } }
 function loadRecent() {
-  try { const a = JSON.parse(lsGet(RECENT_KEY, '[]')); return Array.isArray(a) ? a.slice(0, 8) : []; } catch { return []; }
+  try {
+    const a = JSON.parse(lsGet(RECENT_KEY, '[]'));
+    if (!Array.isArray(a)) return [];
+    return a.filter((p) => p && typeof p.name === 'string' && Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180).slice(0, 8);
+  } catch { return []; }
 }
 function saveRecent() {
   if (!S.name) return;
@@ -147,6 +153,12 @@ function setStatus(msg, err) {
   el.textContent = msg || '';
   el.classList.toggle('err', !!err);
 }
+function showForecastError(msg) {
+  const el = $('error');
+  el.textContent = msg || TXT.wxErr;
+  el.hidden = false;
+}
+function hideForecastError() { $('error').hidden = true; }
 
 // ───────── 下拉框 ─────────
 function initSelects() {
@@ -259,20 +271,24 @@ async function searchOpenMeteo(q) {
 }
 
 let searching = false;
+let searchTimer = 0;
+let pickToken = 0;   // 取消过期的 pickCandidate（慢地图加载时用户又选了别的地点）
 async function search(ev) {
   ev.preventDefault();
   const q = $('q').value.trim();
   if (!q || searching) return;        // 只在提交时发请求；上一次没回来就不再发
   searching = true;
+  clearTimeout(searchTimer);
   setStatus(TXT.searching);
   $('search-btn').disabled = true;
-  let list = [];
-  try { list = await searchNominatim(q); } catch { list = []; }
-  if (!list.length) { try { list = await searchOpenMeteo(q); } catch { /* 两个都失败 */ } }
+  let list = [], anyOk = false;
+  try { list = await searchNominatim(q); anyOk = true; } catch { list = []; }
+  if (!list.length) { try { list = await searchOpenMeteo(q); anyOk = true; } catch { /* 两个都失败 */ } }
   searching = false;
-  setTimeout(() => { $('search-btn').disabled = false; }, 1000);   // 按钮至少冷却 1 s
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { if (!searching) $('search-btn').disabled = false; }, 1000);   // 按钮至少冷却 1 s
   const ul = $('results');
-  if (!list.length) { setStatus(TXT.noResult, true); ul.hidden = true; return; }
+  if (!list.length) { setStatus(anyOk ? TXT.noResult : TXT.searchErr, true); ul.hidden = true; return; }
   setStatus('');
   let html = '', lastKind = null;
   list.forEach((c, i) => {
@@ -285,6 +301,8 @@ async function search(ev) {
 }
 
 async function pickCandidate(c) {
+  const tk = ++pickToken;
+  const tokenAtStart = S.token;
   if (c.kind === 'place') {
     S.wSel = null;
     drawOverlays();
@@ -293,12 +311,20 @@ async function pickCandidate(c) {
   }
   S.wSel = { name: c.name, kind: c.kind, water: c.water, geom: c.geom };
   hideNearby();
-  await openMap();
+  const mapOk = await openMap();
+  if (tk !== pickToken || S.token !== tokenAtStart) return;   // 地图加载期间用户又选了别的地点
   drawOverlays(true);
   if (c.kind === 'river' && c.geom && geomSpanM(c.geom) > LONG_RIVER_M) {
-    // 长河：等用户在高亮线上点一下再算
-    setStatus(TXT.longRiver(c.name));
-    $('map-wrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (mapOk) {
+      // 长河：等用户在高亮线上点一下再算
+      setStatus(TXT.longRiver(c.name));
+      $('map-wrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // 地图不可用：退化为离候选点最近的河段，别让用户对着隐藏的地图干瞪眼
+    const s = snapToGeom(c.lat, c.lon, c.geom);
+    await choosePlace(s.lat, s.lon, c.name, { water: c.water, keepSel: true, segment: c.name });
+    if (S.out && Math.abs(S.lat - s.lat) < 1e-9 && Math.abs(S.lon - s.lon) < 1e-9) setStatus(TXT.longRiverNoMap(c.name), true);
     return;
   }
   let lat = c.lat, lon = c.lon;
@@ -412,7 +438,7 @@ async function showNearby(lat, lon) {
   const cands = [...groups.values()].map((c) => {
     const geom = c.geoms.length === 1 ? c.geoms[0] : { type: 'GeometryCollection', geometries: c.geoms };
     return { ...c, geom, dist: snapToGeom(lat, lon, geom).dist };
-  }).sort((a, b) => a.dist - b.dist).slice(0, 8);
+  }).filter((c) => Number.isFinite(c.dist)).sort((a, b) => a.dist - b.dist).slice(0, 8);
   S.nearby = cands;
   drawOverlays();
   if (!cands.length) { box.innerHTML = `<p class="small muted">${esc(TXT.nearbyNone)}</p>`; return; }
@@ -438,34 +464,43 @@ function hideNearby() { nearbyToken++; S.nearby = []; $('nearby').hidden = true;
 async function choosePlace(lat, lon, name, opts = {}) {
   const token = ++S.token;
   S.lat = +lat; S.lon = ((+lon + 540) % 360) - 180; S.name = name || '';
-  S.fc = null; S.marine = null; S.out = null; S.sel = 0; S.wAuto = null;
+  S.fc = null; S.marine = null; S.flood = null; S.out = null; S.sel = 0; S.wAuto = null; S.today = null;
   S.wPreset = opts.water || null;
   if (!opts.keepSel) S.wSel = null;
+  hideNearby();   // 换钓点时清掉旧点的附近水体、旧高亮和在途请求
   syncUrl();
   document.title = S.name ? `${S.name} - ${BASE_TITLE}` : BASE_TITLE;
   $('empty').hidden = true;
+  hideForecastError();
   $('result').hidden = true;
   $('loading').hidden = false;
   $('loading').textContent = TXT.loadingWx;
   drawOverlays();
   const marineP = getJSON(marineUrl(S.lat, S.lon), {}, 15000).catch(() => null);
+  const floodP = getJSON(floodUrl(S.lat, S.lon), {}, 15000).catch(() => null);
   const fcP = getJSON(forecastUrl(S.lat, S.lon), {}, 20000);
   if (opts.segment) reverseName(S.lat, S.lon, token, opts.segment);
   else if (!S.name) reverseName(S.lat, S.lon, token);
   else saveRecent();
   try {
-    const [fc, marine] = await Promise.all([fcP, marineP]);
+    const [fc, marine, flood] = await Promise.all([fcP, marineP, floodP]);
     if (token !== S.token) return;
-    S.fc = fc; S.marine = marine;
+    S.fc = fc; S.marine = marine; S.flood = flood;
+    S.today = localToday(fc);
     recompute();
+    if (!S.out || !S.out.days.length) return;
     if (S.wUser) setStatus(TXT.userWater(TXT.water[S.wUser]));
     else if (S.wPreset) setStatus(S.wSel ? TXT.selWater(S.wSel.name, TXT.kind[S.wSel.kind], TXT.water[S.wPreset]) : TXT.detected(TXT.water[S.wPreset]));
     else detectWater(token);
   } catch {
     if (token !== S.token) return;
-    $('loading').hidden = true;
-    $('empty').hidden = false;
-    setStatus(TXT.wxErr, true);
+    if (!S.fc) {
+      $('loading').hidden = true;
+      $('result').hidden = true;
+      $('empty').hidden = true;
+      showForecastError(TXT.wxErr);
+      setStatus('');
+    }
   }
 }
 
@@ -480,14 +515,29 @@ function recompute() {
   if (!S.fc) return;
   const { water, src } = currentWater();
   try {
-    S.out = computeForecast({ forecast: S.fc, marine: S.marine, species: S.sp, water, waterSource: src, name: S.name, lang: LANG });
+    S.out = computeForecast({ forecast: S.fc, marine: S.marine, flood: S.flood, species: S.sp, water, waterSource: src, name: S.name, lang: LANG, now: S.today || localToday(S.fc) });
   } catch (e) {
     console.error(e);
-    setStatus(TXT.wxErr, true);
+    S.out = null;
+    $('loading').hidden = true;
+    $('result').hidden = true;
+    $('empty').hidden = true;
+    showForecastError(TXT.wxErr);
+    setStatus('');
+    return;
+  }
+  if (!S.out.days.length) {
+    $('loading').hidden = true;
+    $('result').hidden = true;
+    $('empty').hidden = true;
+    showForecastError(TXT.noDays);
+    setStatus('');
     return;
   }
   if (S.sel >= S.out.days.length) S.sel = 0;
   $('loading').hidden = true;
+  hideForecastError();
+  $('empty').hidden = true;
   $('result').hidden = false;
   renderPlace();
   renderAlerts();
@@ -496,10 +546,15 @@ function recompute() {
 }
 
 // ───────── 渲染 ─────────
+const addDays = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 function dateLabel(date, i) {
   const [y, m, d] = date.split('-').map(Number);
   const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return { rel: i === 0 ? TXT.today : i === 1 ? TXT.tomorrow : TXT.week[w], full: TXT.dateFmt(m, d, TXT.week[w]), short: TXT.shortDate(m, d) };
+  const today = S.today || (S.fc ? localToday(S.fc) : null);
+  let rel = TXT.week[w];
+  if (today && date === today) rel = TXT.today;
+  else if (today && date === addDays(today, 1)) rel = TXT.tomorrow;
+  return { rel, full: TXT.dateFmt(m, d, TXT.week[w]), short: TXT.shortDate(m, d) };
 }
 
 function renderPlace() {
@@ -549,8 +604,8 @@ function renderDays() {
 }
 
 function renderDetail() {
-  const d = S.out.days[S.sel];
-  if (!d) return;
+  const d = S.out && S.out.days[S.sel];
+  if (!d) { $('result').hidden = true; return; }
   const lb = dateLabel(d.date, S.sel);
   $('d-title').textContent = lb.rel === TXT.week[new Date(d.date + 'T00:00Z').getUTCDay()] ? lb.full : `${lb.rel} ${lb.full}`;
   $('d-score').textContent = d.score;
@@ -596,11 +651,25 @@ function drawChart(hover = -1) {
   const Y = (v) => pad.t + (1 - v / 100) * (Hh - pad.t - pad.b);
   const base = tm(d.date + 'T00:00');
   const hm = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
-  const winT = (w) => { let a = base + hm(w.start), b = base + hm(w.end); if (b < a) b += 1440; if (a < base) { a += 1440; b += 1440; } return [a, b]; };
+  const winT = (w) => {
+    let a = base + hm(w.start), b = base + hm(w.end);
+    if (b < a) b += 1440;
+    // 热季参与小时跨到次日 02:00：00:00/01:00/02:00 开头的窗口属于次日，不能画到当天早上
+    if (hm(w.start) < 180) { a += 1440; b += 1440; }
+    return [a, b];
+  };
 
-  // 危险红区（雷暴 / 大风 / 大浪）
+  // 危险红区（雷暴 / 大风 / 大浪）：先把连续小时合并成段，避免半透明色块叠加变深
   g.fillStyle = 'rgba(220,38,38,.16)';
-  for (const h of hrs) if (h.flags.some((f) => f === 'thunder' || f === 'gale' || f === 'wave')) { const t = tm(h.t); g.fillRect(X(t - 30), pad.t, X(t + 30) - X(t - 30), Hh - pad.t - pad.b); }
+  const danger = [];
+  for (const h of hrs) {
+    if (!h.flags.some((f) => f === 'thunder' || f === 'gale' || f === 'wave')) continue;
+    const t = tm(h.t);
+    const last = danger[danger.length - 1];
+    if (last && t - last[1] <= 60) last[1] = t;
+    else danger.push([t, t]);
+  }
+  for (const [a, b] of danger) g.fillRect(X(a - 30), pad.t, X(b + 30) - X(a - 30), Hh - pad.t - pad.b);
   // 最佳时段
   g.fillStyle = 'rgba(21,128,61,.14)';
   for (const w of d.windows) { const [a, b] = winT(w); const x0 = X(Math.max(a, t0)), x1 = X(Math.min(b, t1)); if (x1 > x0) g.fillRect(x0, pad.t, x1 - x0, Hh - pad.t - pad.b); }
@@ -670,29 +739,44 @@ function gps() {
 
 // ───────── 地图（Leaflet，cdnjs 按需加载；默认高德底图，可切 OSM） ─────────
 let map = null, tiles = null, overlay = null;
+let leafletPromise = null;   // 共享加载 Promise，避免并发插入多份 Leaflet
+let mapPromise = null;       // 共享初始化 Promise，避免 L.map('map') 被调用两次
+const LEAFLET_TIMEOUT = 10000; // CDN 被挂起时别让整个选点流程卡死
 const toMap = (lat, lon) => (S.basemap === 'amap' ? wgs84ToGcj02(lat, lon) : [lat, lon]);
 const fromMap = (ll) => (S.basemap === 'amap' ? gcj02ToWgs84(ll.lat, ll.lng) : [ll.lat, ll.lng]);
 
 function loadLeaflet() {
   if (window.L) return Promise.resolve(window.L);
-  return new Promise((res, rej) => {
+  if (leafletPromise) return leafletPromise;
+  leafletPromise = new Promise((res, rej) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
     css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
     document.head.appendChild(css);
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
-    s.onload = () => (window.L ? res(window.L) : rej(new Error('no L')));
-    s.onerror = rej;
+    const timer = setTimeout(() => {
+      s.onload = s.onerror = null;
+      rej(new Error('leaflet timeout'));
+    }, LEAFLET_TIMEOUT);
+    const done = (fn) => { clearTimeout(timer); s.onload = s.onerror = null; fn(); };
+    s.onload = () => done(() => (window.L ? res(window.L) : rej(new Error('no L'))));
+    s.onerror = () => done(() => rej(new Error('leaflet load error')));
     document.head.appendChild(s);
   });
+  // 失败后清空，允许用户再点一次重试；如果脚本后来自己加载成功，window.L 仍在。
+  leafletPromise.catch(() => { leafletPromise = null; });
+  return leafletPromise;
 }
 function setTiles() {
   const L = window.L;
   if (tiles) map.removeLayer(tiles);
+  const osmAttr = LANG === 'en'
+    ? 'Map &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    : '底图 &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 贡献者';
   tiles = S.basemap === 'amap'
-    ? L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', { subdomains: '1234', maxZoom: 18, attribution: '&copy; 高德地图' })
-    : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+    ? L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', { subdomains: '1234', maxZoom: 18, attribution: TXT.amapAttr })
+    : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: osmAttr });
   tiles.addTo(map);
   $('map-attr').textContent = S.basemap === 'amap' ? TXT.amapAttr : TXT.osmAttr;
   document.querySelectorAll('.bm-switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.bm === S.basemap)));
@@ -718,23 +802,32 @@ function drawOverlays(fit = false) {
 async function openMap() {
   $('map-wrap').hidden = false;
   if (map) { map.invalidateSize(); return true; }
+  if (mapPromise) return mapPromise;
   setStatus(TXT.mapLoading);
-  try {
-    const L = await loadLeaflet();
-    setStatus('');
-    map = L.map('map', { zoomControl: true }).setView(S.lat != null ? toMap(S.lat, S.lon) : [32, 112], S.lat != null ? 10 : 4);
-    setTiles();
-    map.on('click', (e) => onMapClick(fromMap(e.latlng)));
-    drawOverlays();
-    return true;
-  } catch {
-    setStatus(TXT.mapErr, true);
-    $('map-wrap').hidden = true;
-    return false;
-  }
+  mapPromise = (async () => {
+    try {
+      const L = await loadLeaflet();
+      if (map) { map.invalidateSize(); return true; }
+      map = L.map('map', { zoomControl: true }).setView(S.lat != null ? toMap(S.lat, S.lon) : [32, 112], S.lat != null ? 10 : 4);
+      setTiles();
+      map.on('click', (e) => onMapClick(fromMap(e.latlng)));
+      drawOverlays();
+      setStatus('');
+      return true;
+    } catch {
+      setStatus(TXT.mapErr, true);
+      $('map-wrap').hidden = true;
+      return false;
+    }
+  })();
+  try { return await mapPromise; } finally { mapPromise = null; }
 }
 function toggleMap() {
-  if (!$('map-wrap').hidden) { $('map-wrap').hidden = true; return; }
+  if (!$('map-wrap').hidden) {
+    if (!map && mapPromise) return;   // 首次加载中，别把容器藏起来
+    $('map-wrap').hidden = true;
+    return;
+  }
   openMap();
 }
 function onMapClick([lat, lon]) {
