@@ -220,5 +220,24 @@ test('实测溶氧 >=5 不触发低氧 flag', () => {
   assert(out.days[0].oxygen_risk !== true && out.days[0].oxygen_warn !== true, '6.0 不应触发低氧提示');
 });
 
+// ── 方案 3：鳊鱼 + 台钓建议 + 鹰潭专用模式接线 ──
+test('鳊鱼鱼种和台钓粉饵/虾建议', () => {
+  assert(engine.SPECIES.some((s) => s.key === 'bream'), '缺少鳊鱼鱼种');
+  const out = engine.computeForecast({ forecast: makeWeather({ base: 22 }), species: 'bream', water: 'river', now: '2026-11-23', days: 7, style: 'taiwan' });
+  assert(out.species === 'bream', `species=${out.species}`);
+  assert(out.days[0].advice.some((a) => a.includes('台钓')), out.days[0].advice.join(' | '));
+  const predator = engine.computeForecast({ forecast: makeWeather({ base: 22 }), species: 'culter', water: 'river', now: '2026-11-23', days: 7, style: 'taiwan' });
+  assert(predator.days[0].advice.some((a) => a.includes('虾')), predator.days[0].advice.join(' | '));
+});
+
+test('app.js 鹰潭专用模式：默认点、边界、台钓、四种鱼', () => {
+  const app = fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8');
+  assert(/const YINGTAN_ONLY = true/.test(app), '未开启鹰潭专用模式');
+  assert(/const DEFAULT_POINT = \{ lat: 28\.26, lon: 117\.03/.test(app), '缺默认点');
+  assert(/const YINGTAN_SPECIES = \['crucian', 'bream', 'culter', 'mandarin'\]/.test(app), '鱼种列表不对');
+  assert(/insideYingtan/.test(app), '缺鹰潭边界校验');
+  assert(/style: YINGTAN_ONLY \? 'taiwan'/.test(app), '未传台钓 style');
+});
+
 console.log(`\n${passed} 通过，${failed} 失败`);
 process.exit(failed ? 1 : 0);

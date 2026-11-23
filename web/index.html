@@ -216,19 +216,13 @@
   <main class="wrap">
     <section class="hero">
       <h1>钓鱼天气预报 · 鱼情分析 · 出钓指数</h1>
-      <p class="lead">按天气和地理给钓友出未来 7 天的出钓指数、最佳钓鱼时间、钓位水层饵料建议和安全提示。江、河、湖、海、水库都能搜，也可以在地图上直接点水面。</p>
+      <p class="lead">按天气和地理给鹰潭钓友出未来 7 天的出钓指数、最佳钓鱼时间、钓位水层饵料建议和安全提示。只支持鹰潭市，点地图选水面即可。</p>
     </section>
 
     <section class="card panel" id="pick">
-      <form class="search" id="search-form" autocomplete="off">
-        <input type="search" id="q" placeholder="搜江河湖海水库或地名，如：汉江、千岛湖、象山港" aria-label="江河湖海水库或地名">
-        <button type="submit" class="primary" id="search-btn">搜索</button>
-      </form>
-      <p class="hint">搜水体名（江、河、湖、水库、海湾）比搜城市更准；长河会让你在地图上点选河段。</p>
-      <ul class="results" id="results" hidden></ul>
+      <p class="hint">只支持鹰潭市：点「地图选点」在水面上选位置。</p>
       <div class="row-btns">
-        <button type="button" id="gps-btn">用我的位置</button>
-        <button type="button" id="map-btn">地图选点</button>
+        <button type="button" id="map-btn" class="primary">地图选点</button>
       </div>
       <div id="map-wrap" hidden>
         <div id="map"></div>

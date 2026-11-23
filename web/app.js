@@ -17,6 +17,14 @@ const BASEMAP_KEY = 'fishcast.basemap';
 const BASE_TITLE = document.title;
 const LONG_RIVER_M = 8000;   // 河道外包框对角线超过 8 km 就要求用户点选河段
 const SNAP_MAX_M = 3000;     // 点击离已选水体 3 km 以内才吸附，否则当作点了别处
+// 鹰潭专用模式：保留地图，限制在鹰潭市；城市固定，溶氧用城市平均。
+const YINGTAN_ONLY = true;
+const YINGTAN_CITY = '鹰潭市';
+const YINGTAN_BOUNDS = { minLat: 27.8, maxLat: 28.7, minLon: 116.6, maxLon: 117.4 };
+const DEFAULT_POINT = { lat: 28.26, lon: 117.03, name: '信江（鹰潭段）' };
+const YINGTAN_SPECIES = ['crucian', 'bream', 'culter', 'mandarin'];
+const insideYingtan = (lat, lon) => lat >= YINGTAN_BOUNDS.minLat && lat <= YINGTAN_BOUNDS.maxLat
+  && lon >= YINGTAN_BOUNDS.minLon && lon <= YINGTAN_BOUNDS.maxLon;
 
 const TXT = {
   zh: {
@@ -35,6 +43,7 @@ const TXT = {
     longRiver: (n) => `「${n}」是条长河：请在地图上高亮的河道上点一下你要去的那一段，会自动挪到最近的河面上再算。`,
     longRiverNoMap: (n) => `地图没加载出来，先按「${n}」离你选中点最近的河段算；想换河段可以再搜一个更具体的地名。`,
     tooFar: '离选中的水面太远，按你点的位置重新算。',
+    onlyYingtan: '只支持鹰潭市：请点在鹰潭范围内的水面上。',
     nearbyLoading: '正在找附近 1.5 公里内有名字的水面…', nearbyTitle: '附近有名字的水面（点一个就按它算）：', nearbyNone: '附近 1.5 公里内没有带名字的水面，就按你点的位置算。',
     nearbyFail: '附近水域没查到，就按你点的位置算；也可以手动选水域类型。', usePoint: '都不是，就按我点的位置', inside: '就在水面上',
     segment: (river, place) => `${river}·${place}段`,
@@ -74,6 +83,7 @@ const TXT = {
     longRiver: (n) => `“${n}” is a long river: tap the stretch you are heading to on the highlighted line, and the spot moves onto the nearest bit of river.`,
     longRiverNoMap: (n) => `The map did not load; scoring the stretch of “${n}” nearest your selected point. Search for a more specific place to move it.`,
     tooFar: 'Too far from the selected water; scoring the point you tapped instead.',
+    onlyYingtan: 'Yingtan only: tap a water point inside Yingtan.',
     nearbyLoading: 'Looking for named water within 1.5 km…', nearbyTitle: 'Named water nearby (tap one to use it):', nearbyNone: 'No named water within 1.5 km; using the point you tapped.',
     nearbyFail: 'Could not look up the water nearby; using the point you tapped. You can also pick the water type yourself.', usePoint: 'None of these, use my point', inside: 'you are on it',
     segment: (river, place) => `${river} · ${place}`,
@@ -129,7 +139,8 @@ function loadRecent() {
   try {
     const a = JSON.parse(lsGet(RECENT_KEY, '[]'));
     if (!Array.isArray(a)) return [];
-    return a.filter((p) => p && typeof p.name === 'string' && Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180).slice(0, 8);
+    return a.filter((p) => p && typeof p.name === 'string' && Number.isFinite(p.lat) && Number.isFinite(p.lon)
+      && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180 && (!YINGTAN_ONLY || insideYingtan(p.lat, p.lon))).slice(0, 8);
   } catch { return []; }
 }
 function saveRecent() {
@@ -166,8 +177,11 @@ function hideForecastError() { $('error').hidden = true; }
 
 // ───────── 下拉框 ─────────
 function initSelects() {
-  $('sp').innerHTML = SPECIES.map((s) => `<option value="${s.key}">${esc(LANG === 'en' ? s.en : s.name)}</option>`).join('');
-  $('w').innerHTML = `<option value="">${esc(TXT.waterAuto)}</option>` + WATER_TYPES.map((w) => `<option value="${w}">${esc(TXT.water[w])}</option>`).join('');
+  const species = YINGTAN_ONLY ? SPECIES.filter((s) => YINGTAN_SPECIES.includes(s.key)) : SPECIES;
+  if (YINGTAN_ONLY && !YINGTAN_SPECIES.includes(S.sp)) S.sp = 'crucian';
+  $('sp').innerHTML = species.map((s) => `<option value="${s.key}">${esc(LANG === 'en' ? s.en : s.name)}</option>`).join('');
+  const waters = YINGTAN_ONLY ? WATER_TYPES.filter((w) => w !== 'sea') : WATER_TYPES;
+  $('w').innerHTML = `<option value="">${esc(TXT.waterAuto)}</option>` + waters.map((w) => `<option value="${w}">${esc(TXT.water[w])}</option>`).join('');
   $('sp').addEventListener('change', () => { S.sp = $('sp').value; syncUrl(); recompute(); });
   $('w').addEventListener('change', () => {
     S.wUser = $('w').value || null;
@@ -196,8 +210,8 @@ function readUrl() {
   const q = new URLSearchParams(location.search);
   const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon'));
   const sp = q.get('sp'), w = q.get('w'), wt = q.get('wt');
-  if (sp && SPECIES.some((s) => s.key === sp)) S.sp = sp;
-  if (w && WATER_TYPES.includes(w)) S.wUser = w;
+  if (sp && SPECIES.some((s) => s.key === sp) && (!YINGTAN_ONLY || YINGTAN_SPECIES.includes(sp))) S.sp = sp;
+  if (w && WATER_TYPES.includes(w) && (!YINGTAN_ONLY || w !== 'sea')) S.wUser = w;
   $('sp').value = S.sp;
   $('w').value = S.wUser || '';
   if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
@@ -477,8 +491,10 @@ function hideNearby() { nearbyToken++; S.nearby = []; $('nearby').hidden = true;
  */
 async function choosePlace(lat, lon, name, opts = {}) {
   const token = ++S.token;
+  if (YINGTAN_ONLY && !insideYingtan(+lat, +lon)) { lat = DEFAULT_POINT.lat; lon = DEFAULT_POINT.lon; name = DEFAULT_POINT.name; }
   S.lat = +lat; S.lon = ((+lon + 540) % 360) - 180; S.name = name || '';
-  S.fc = null; S.marine = null; S.flood = null; S.out = null; S.sel = 0; S.wAuto = null; S.today = null; S.city = null;
+  S.fc = null; S.marine = null; S.flood = null; S.out = null; S.sel = 0; S.wAuto = null; S.today = null;
+  S.city = YINGTAN_ONLY ? YINGTAN_CITY : null;
   S.wPreset = opts.water || null;
   if (!opts.keepSel) S.wSel = null;
   hideNearby();   // 换钓点时清掉旧点的附近水体、旧高亮和在途请求
@@ -493,8 +509,12 @@ async function choosePlace(lat, lon, name, opts = {}) {
   const marineP = getJSON(marineUrl(S.lat, S.lon), {}, 15000).catch(() => null);
   const floodP = getJSON(floodUrl(S.lat, S.lon), {}, 15000).catch(() => null);
   const fcP = getJSON(forecastUrl(S.lat, S.lon), {}, 20000);
-  reverseName(S.lat, S.lon, token, opts.segment, !S.name);
-  if (S.name) saveRecent();
+  if (YINGTAN_ONLY) {
+    if (S.name) saveRecent();
+  } else {
+    reverseName(S.lat, S.lon, token, opts.segment, !S.name);
+    if (S.name) saveRecent();
+  }
   try {
     const [fc, marine, flood] = await Promise.all([fcP, marineP, floodP]);
     if (token !== S.token) return;
@@ -548,7 +568,7 @@ function recompute() {
   if (!S.fc) return;
   const { water, src } = currentWater();
   try {
-    S.out = computeForecast({ forecast: S.fc, marine: S.marine, flood: S.flood, oxygen: currentOxygen(), species: S.sp, water, waterSource: src, name: S.name, lang: LANG, now: S.today || localToday(S.fc) });
+    S.out = computeForecast({ forecast: S.fc, marine: S.marine, flood: S.flood, oxygen: currentOxygen(), species: S.sp, water, waterSource: src, name: S.name, lang: LANG, now: S.today || localToday(S.fc), style: YINGTAN_ONLY ? 'taiwan' : undefined });
   } catch (e) {
     console.error(e);
     S.out = null;
@@ -842,7 +862,12 @@ async function openMap() {
     try {
       const L = await loadLeaflet();
       if (map) { map.invalidateSize(); return true; }
-      map = L.map('map', { zoomControl: true }).setView(S.lat != null ? toMap(S.lat, S.lon) : [32, 112], S.lat != null ? 10 : 4);
+      const center = S.lat != null ? toMap(S.lat, S.lon) : YINGTAN_ONLY ? toMap(DEFAULT_POINT.lat, DEFAULT_POINT.lon) : [32, 112];
+      const opts = { zoomControl: true };
+      if (YINGTAN_ONLY) opts.maxBounds = L.latLngBounds(
+        toMap(YINGTAN_BOUNDS.minLat, YINGTAN_BOUNDS.minLon),
+        toMap(YINGTAN_BOUNDS.maxLat, YINGTAN_BOUNDS.maxLon));
+      map = L.map('map', opts).setView(center, YINGTAN_ONLY ? 11 : S.lat != null ? 10 : 4);
       setTiles();
       map.on('click', (e) => onMapClick(fromMap(e.latlng)));
       drawOverlays();
@@ -857,14 +882,10 @@ async function openMap() {
   try { return await mapPromise; } finally { mapPromise = null; }
 }
 function toggleMap() {
-  if (!$('map-wrap').hidden) {
-    if (!map && mapPromise) return;   // 首次加载中，别把容器藏起来
-    $('map-wrap').hidden = true;
-    return;
-  }
-  openMap();
+  openMap();   // 鹰潭模式只有一个入口：始终打开/保留地图，避免误触把它藏起来
 }
 function onMapClick([lat, lon]) {
+  if (YINGTAN_ONLY && !insideYingtan(lat, lon)) { setStatus(TXT.onlyYingtan, true); return; }
   // 已选水体：点在它附近就吸附过去（长河就是在这里选河段）
   if (S.wSel && S.wSel.geom) {
     const s = snapToGeom(lat, lon, S.wSel.geom);
@@ -887,6 +908,9 @@ function switchBasemap(bm) {
   lsSet(BASEMAP_KEY, bm);
   if (!map) return;
   setTiles();
+  if (YINGTAN_ONLY) map.setMaxBounds(window.L.latLngBounds(
+    toMap(YINGTAN_BOUNDS.minLat, YINGTAN_BOUNDS.minLon),
+    toMap(YINGTAN_BOUNDS.maxLat, YINGTAN_BOUNDS.maxLon)));
   map.setView(toMap(center[0], center[1]), zoom, { animate: false });
   drawOverlays();
 }
@@ -912,8 +936,6 @@ S.basemap = lsGet(BASEMAP_KEY, 'amap') === 'osm' ? 'osm' : 'amap';
 S.nearby = [];
 initSelects();
 renderRecent();
-$('search-form').addEventListener('submit', search);
-$('gps-btn').addEventListener('click', gps);
 $('map-btn').addEventListener('click', toggleMap);
 $('share-link').addEventListener('click', copyShare);
 document.querySelectorAll('.bm-switch button').forEach((b) => b.addEventListener('click', () => switchBasemap(b.dataset.bm)));
@@ -924,3 +946,6 @@ let rT = 0;
 window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => drawChart(), 120); });
 readUrl();
 loadOxygenData();
+if (YINGTAN_ONLY && S.lat == null) {
+  choosePlace(DEFAULT_POINT.lat, DEFAULT_POINT.lon, DEFAULT_POINT.name, {});
+}

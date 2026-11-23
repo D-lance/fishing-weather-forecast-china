@@ -92,6 +92,7 @@ export const WATER_TYPES = ['reservoir', 'lake', 'river', 'pond', 'sea', 'unknow
 // 构建时若 fixtures/species.json（或 FISH_SPECIES_JSON）存在，tools/build.mjs 会用它替换下面两个标记之间的数组。
 const SPECIES_TABLE = /*SPECIES_BEGIN*/[
   { "key": "crucian", "name": "鲫鱼", "tmin": 5, "opt_lo": 15, "opt_hi": 25, "tmax": 30 },
+  { "key": "bream", "name": "鳊鱼", "tmin": 8, "opt_lo": 18, "opt_hi": 28, "tmax": 32 },
   { "key": "carp", "name": "鲤鱼", "tmin": 10, "opt_lo": 18, "opt_hi": 28, "tmax": 32 },
   { "key": "grass", "name": "草鱼", "tmin": 15, "opt_lo": 20, "opt_hi": 30, "tmax": 33 },
   { "key": "silver", "name": "鲢鳙", "tmin": 16, "opt_lo": 22, "opt_hi": 30, "tmax": 34 },
@@ -106,7 +107,7 @@ const SPECIES_TABLE = /*SPECIES_BEGIN*/[
 ]/*SPECIES_END*/;
 
 const SPECIES_EN = {
-  crucian: 'Crucian carp', carp: 'Common carp', grass: 'Grass carp', silver: 'Silver / bighead carp', tilapia: 'Tilapia',
+  crucian: 'Crucian carp', bream: 'Wuchang bream', carp: 'Common carp', grass: 'Grass carp', silver: 'Silver / bighead carp', tilapia: 'Tilapia',
   culter: 'Topmouth culter', bass: 'Largemouth bass', snakehead: 'Snakehead', mandarin: 'Mandarin fish',
   catfish: 'Yellow catfish', seabass: 'Sea bass', seabream: 'Black seabream',
 };
@@ -333,6 +334,8 @@ const T = {
     spotStrong: '钓位：风力 4 级以上，选背风、站位平稳的岸，安全第一',
     bait: { cold: '饵料：腥香味型、小颗粒，蚯蚓红虫', mid: '饵料：腥香、谷香都可以', warm: '饵料：清淡、果酸、谷物' },
     lure: { cold: '饵型：慢沉饵、贴底慢拖', mid: '饵型：米诺、软饵', warm: '饵型：早晚用水面系，白天打深层' },
+    taiwanBait: { cold: '台钓：粉饵为主，腥香、小颗粒；可加虾粉/虾肉', mid: '台钓：粉饵腥香或谷香；可加虾粉/虾肉', warm: '台钓：清淡、果酸粉饵；虾肉也可' },
+    taiwanPredator: { cold: '台钓：虾肉/虾饵优先，慢拖守钓', mid: '台钓：虾肉/虾饵，粉饵辅助', warm: '台钓：虾肉/活饵，早晚为主' },
     water: {
       reservoir: '找位：回水湾、岬角、老河道', river: '找位：回水湾、缓流区、桥墩下游', lake: '找位：草边、进出水口',
       pond: '找位：增氧机附近、进水口、深水区',
@@ -394,6 +397,8 @@ const T = {
     spotStrong: 'Spot: wind Beaufort 4+, pick a sheltered bank with stable footing; safety first',
     bait: { cold: 'Bait: fishy scents, small particles, worms and bloodworms', mid: 'Bait: fishy or grain scents both work', warm: 'Bait: light flavours, fruity/sour, grains' },
     lure: { cold: 'Lures: slow sinkers, slow bottom drags', mid: 'Lures: minnows, soft plastics', warm: 'Lures: topwater at dawn/dusk, deep baits by day' },
+    taiwanBait: { cold: 'Taiwan-style: powder bait, fishy and fine; add shrimp powder/meat', mid: 'Taiwan-style: fishy or grain powder bait; add shrimp powder/meat', warm: 'Taiwan-style: light/fruity powder bait; shrimp meat also works' },
+    taiwanPredator: { cold: 'Taiwan-style: shrimp bait first, slow presentation', mid: 'Taiwan-style: shrimp bait, powder bait as backup', warm: 'Taiwan-style: shrimp/live bait, dawn/dusk best' },
     water: {
       reservoir: 'Where: back bays, points, old river channels', river: 'Where: back-eddies, slow current, downstream of bridge piers', lake: 'Where: weed edges, inflows and outflows',
       pond: 'Where: near aerators, inflows, deep holes',
@@ -616,6 +621,7 @@ const SUB_KEYS = Object.keys(WEIGHTS);
  * @param {object} [o.marine]   Open-Meteo marine 原始响应，或 null
  * @param {object} [o.flood]    Open-Meteo flood 原始响应，或 null
  * @param {object} [o.oxygen]   城市平均实测溶解氧 { value, unit, count, time, source }；只作用于第一个显示日
+ * @param {string} [o.style]    'taiwan' 时用台钓粉饵/虾建议；不传则用通用饵料/路亚建议
  * @param {string} [o.species]  鱼种 key，默认 crucian
  * @param {string} [o.water]    reservoir|lake|river|pond|sea|unknown
  * @param {string} [o.waterSource] osm|user|default
@@ -882,7 +888,8 @@ export function computeForecast(o) {
       else advice.push(L.spotStrong);
     }
     const band = W < 12 ? 'cold' : W <= 22 ? 'mid' : 'warm';
-    advice.push(sp.lure ? L.lure[band] : L.bait[band]);
+    if (o.style === 'taiwan') advice.push((sp.key === 'culter' || sp.key === 'mandarin') ? L.taiwanPredator[band] : L.taiwanBait[band]);
+    else advice.push(sp.lure ? L.lure[band] : L.bait[band]);
     const dayTides = tide.filter((x) => x.t >= ds && x.t < ds + 1440).map((x) => ({ t: fmtHM(x.t), kind: x.kind, level: x.v }));
     if (water === 'sea') advice.push(dayTides.length ? L.tides(dayTides) : L.noTides);
     else if (water !== 'unknown') advice.push(L.water[water]);
