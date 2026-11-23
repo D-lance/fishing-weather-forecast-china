@@ -1,7 +1,6 @@
 {
   "今日鱼情": "Fishing Forecast",
   "7 天预报": "7-day forecast",
-  "地图选点": "Pick on map",
   "目标鱼种": "Target species",
   "水域类型": "Water type",
   "先选一个钓点，就能看到未来 7 天的鱼情。": "Pick a fishing spot to see the next 7 days.",
@@ -22,7 +21,7 @@
   "出钓指数说明": "How it works",
   "钓鱼天气预报 · 鱼情分析 · 出钓指数": "Fishing weather forecast · Bite analysis · Bite index",
   "按天气和地理给鹰潭钓友出未来 7 天的出钓指数、最佳钓鱼时间、钓位水层饵料建议和安全提示。只支持鹰潭市，点地图选水面即可。": "A 7-day bite index for Yingtan anglers, built from the weather and local geography, with the best fishing times, spot/depth/bait tips and safety alerts. Yingtan only: pick a water point on the map.",
-  "只支持鹰潭市：点「地图选点」在水面上选位置。": "Yingtan only: tap “Map pick” and choose a water point.",
+  "只支持鹰潭市：直接在地图上点水面选位置。": "Yingtan only: tap the water directly on the map.",
   "底图 © 高德地图": "Map © AMap",
   "底图": "Base map",
   "高德底图": "AMap tiles",

@@ -881,9 +881,6 @@ async function openMap() {
   })();
   try { return await mapPromise; } finally { mapPromise = null; }
 }
-function toggleMap() {
-  openMap();   // 鹰潭模式只有一个入口：始终打开/保留地图，避免误触把它藏起来
-}
 function onMapClick([lat, lon]) {
   if (YINGTAN_ONLY && !insideYingtan(lat, lon)) { setStatus(TXT.onlyYingtan, true); return; }
   // 已选水体：点在它附近就吸附过去（长河就是在这里选河段）
@@ -936,7 +933,6 @@ S.basemap = lsGet(BASEMAP_KEY, 'amap') === 'osm' ? 'osm' : 'amap';
 S.nearby = [];
 initSelects();
 renderRecent();
-$('map-btn').addEventListener('click', toggleMap);
 $('share-link').addEventListener('click', copyShare);
 document.querySelectorAll('.bm-switch button').forEach((b) => b.addEventListener('click', () => switchBasemap(b.dataset.bm)));
 const cv = $('chart');
@@ -949,3 +945,4 @@ loadOxygenData();
 if (YINGTAN_ONLY && S.lat == null) {
   choosePlace(DEFAULT_POINT.lat, DEFAULT_POINT.lon, DEFAULT_POINT.name, { water: 'river' });
 }
+if (YINGTAN_ONLY) openMap();

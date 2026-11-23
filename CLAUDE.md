@@ -83,7 +83,7 @@ docs/model.md       评分模型唯一口径
 - **模型口径**：`docs/model.md` 是唯一口径；改公式先改文档，再改 `web/engine.js`，并保持 JS 与 Python 基准误差 ≤ 1 分（有 fixtures 时）。
 - **v0.4 扩展**：`surface_pressure` 海拔修正、Flood API 径流趋势、海钓潮差/流速/浪周期、低氧 flag、季节/产卵建议；没有新数据时保持 v0.3 行为（季节建议除外）。
 - **城市平均溶解氧**：国家接口 CORS 只允许自身，不能前端直连；`tools/fetch-oxygen.mjs` 定时写 `web/data/oxygen.json`，页面读 `/data/oxygen.json`；实测值只覆盖第一个显示日，其他天用代理。
-- **鹰潭专用模式**：`web/app.js` 的 `YINGTAN_ONLY=true`；只保留地图选点，搜索/GPS 已移除；默认点 `DEFAULT_POINT`（28.26,117.03，信江鹰潭段），地图 `maxBounds` 限制在鹰潭；城市固定 `鹰潭市`，鱼种只显示 crucian/bream/culter/mandarin，传 `style:'taiwan'`（台钓粉饵/虾建议）。
+- **鹰潭专用模式**：`web/app.js` 的 `YINGTAN_ONLY=true`；地图常驻，直接点水面，搜索/GPS 已移除；默认点 `DEFAULT_POINT`（28.26,117.03，信江鹰潭段），地图 `maxBounds` 限制在鹰潭；城市固定 `鹰潭市`，鱼种只显示 crucian/bream/culter/mandarin，传 `style:'taiwan'`（台钓粉饵/虾建议）。
 - **热季最后一天**：`forecastUrl` / `marineUrl` 请求 `forecast_days=8`，网页用 `localToday()` 把“今天”传给 `computeForecast`，保证热季最后一天也有次日 00–02 点；不要只改成 8 天却让 `firstDi = nd - 7` 把首日变成明天。
 - **安全封顶**：雷暴、7 级阵风、2.5m 浪、强降水的小时/日级封顶不得移除；这是产品安全底线。
 - **无后端**：不加数据库/登录/服务端 API；所有请求从浏览器发出。
