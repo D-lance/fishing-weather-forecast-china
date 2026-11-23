@@ -101,6 +101,9 @@ test('app.js 在取到 forecast 时冻结 localToday', () => {
   assert(/import\s*\{[^}]*localToday[^}]*\}\s*from\s*'\.\/engine\.js'/.test(app), 'app.js 没有从 engine.js 导入 localToday');
   assert(/S\.today\s*=\s*localToday\(/.test(app), 'app.js 没有在取到 forecast 时设置 S.today = localToday(fc)');
   assert(/now:\s*S\.today/.test(app), 'app.js 没有给 computeForecast 传 now: S.today');
+  assert(/fetch\('\/data\/oxygen\.json'/.test(app), 'app.js 没有加载 /data/oxygen.json');
+  assert(/oxygen:\s*currentOxygen\(\)/.test(app), 'app.js 没有把城市平均溶氧传给 computeForecast');
+  assert(/S\.city\s*=\s*city/.test(app), 'app.js 没有从反向地名设置 S.city');
 });
 
 // ── check-fixtures：15 天 fixture 无 input.now 时，应从 expected 首日推导锚点 ──
@@ -180,6 +183,41 @@ test('季节建议覆盖春季、黑鱼护崽和冬季', () => {
   assert(summer.days[0].advice.some((a) => a.includes('护崽')), summer.days[0].advice.join(' | '));
   const winter = engine.computeForecast({ forecast: makeWeather({ start: Date.UTC(2026, 0, 1), base: 5 }), species: 'crucian', water: 'lake', now: '2026-01-08', days: 7 });
   assert(winter.days[0].advice.some((a) => a.includes('冬季')), winter.days[0].advice.join(' | '));
+});
+
+// ── v0.4：城市平均实测溶氧覆盖今日代理 ──
+test('实测城市平均溶氧 <3 覆盖今日代理并封顶', () => {
+  const out = engine.computeForecast({
+    forecast: makeWeather({ base: 30, amp: 1, wind: 2.5, surfacePressure: 1015, pressure: 1015 }),
+    species: 'crucian', water: 'pond', now: '2026-11-23', days: 7,
+    oxygen: { value: 2.5, unit: 'mg/L', count: 4, time: '11-23 16:00', source: 'national-city-average' },
+  });
+  assert(out.oxygen && out.oxygen.value === 2.5, 'out.oxygen 缺失');
+  assert(out.days[0].oxygen_risk === true, '第一日未触发 oxygen');
+  assert(out.days[0].alerts.some((a) => a.key === 'oxygen'), '第一日缺 oxygen 警报');
+  assert(out.days[0].hours.every((h) => h.h <= 45), '第一日未封顶 45');
+  assert(out.days[1].oxygen_risk !== true, '第二日不应使用第一日实测值');
+});
+
+test('实测溶氧 3–5 触发 warning 但不封顶', () => {
+  const out = engine.computeForecast({
+    forecast: makeWeather({ base: 30, amp: 1, wind: 2.5, surfacePressure: 1015, pressure: 1015 }),
+    species: 'crucian', water: 'pond', now: '2026-11-23', days: 7,
+    oxygen: { value: 4.0, unit: 'mg/L', count: 4, time: '11-23 16:00', source: 'national-city-average' },
+  });
+  assert(out.days[0].oxygen_warn === true, '未触发 oxygen_warn');
+  assert(out.days[0].oxygen_risk !== true, '4.0 不应触发 severe');
+  assert(out.days[0].alerts.some((a) => a.key === 'oxygenWarn'), '缺 oxygenWarn 警报');
+});
+
+test('实测溶氧 >=5 不触发低氧 flag', () => {
+  const out = engine.computeForecast({
+    forecast: makeWeather({ base: 30, amp: 1, wind: 2.5, surfacePressure: 1015, pressure: 1015 }),
+    species: 'crucian', water: 'pond', now: '2026-11-23', days: 7,
+    oxygen: { value: 6.0, unit: 'mg/L', count: 4, time: '11-23 16:00', source: 'national-city-average' },
+  });
+  assert(out.oxygen && out.oxygen.value === 6, 'out.oxygen 缺失');
+  assert(out.days[0].oxygen_risk !== true && out.days[0].oxygen_warn !== true, '6.0 不应触发低氧提示');
 });
 
 console.log(`\n${passed} 通过，${failed} 失败`);

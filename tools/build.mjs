@@ -204,6 +204,9 @@ fs.writeFileSync(path.join(DIST, 'app.js'), APP);
 for (const [f, src] of Object.entries(MODULES)) fs.writeFileSync(path.join(DIST, f), src);
 // 静态资源（og.png / logo-*.png，由 tools/make-og.mjs 生成）+ manifest
 fs.cpSync(path.join(ROOT, 'web', 'assets'), path.join(DIST, 'assets'), { recursive: true });
+// 城市平均溶解氧等运行数据（由 tools/fetch-oxygen.mjs 生成）
+const DATA_DIR = path.join(ROOT, 'web', 'data');
+if (fs.existsSync(DATA_DIR)) fs.cpSync(DATA_DIR, path.join(DIST, 'data'), { recursive: true });
 // IndexNow 密钥文件（32 位十六进制 .txt）必须在站根：搜索引擎只认密钥文件所在目录之下的 URL。源文件放 assets/，构建时再拷一份到根。
 for (const f of fs.readdirSync(path.join(ROOT, 'web', 'assets'))) if (/^[0-9a-f]{32}.txt$/.test(f)) fs.copyFileSync(path.join(path.join(ROOT, 'web', 'assets'), f), path.join(DIST, f));
 const manifest = (lang) => JSON.stringify({

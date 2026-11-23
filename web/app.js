@@ -44,6 +44,7 @@ const TXT = {
     waterTemp: (t) => `水温约 ${t}℃`, noWin: '没有好时段',
     meta: (d) => `估算水温 ${d.water_temp}℃ · 气温 ${fmt(d.air_min)}–${fmt(d.air_max)}℃ · 降水 ${fmt(d.precip)} 毫米 · 日出 ${d.sunrise} · 日落 ${d.sunset}${d.moonrise ? ' · 月出 ' + d.moonrise : ''}${d.moonset ? ' · 月落 ' + d.moonset : ''}`,
     placeMeta: (p, w, src) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · 海拔 ${p.elevation ?? '—'} 米 · 水域：${w}（${src}）`,
+    oxygenMeta: (o) => `城市平均溶解氧 ${fmt(o.value)} mg/L（${o.count} 个站${o.time ? '，' + o.time : ''}）`,
     wsrc: { osm: '地图自动认出', user: '手动选择', default: '没认出' },
     lvDesc: ['挑对时段去，大概率连竿', '挑对时段去，有鱼口', '能钓，口不会太好', '难钓，想去就只挑最佳时段', '天气不好或不安全，建议改天'],
     weight: (w) => `占 ${w}%`, km: (m) => (m < 1000 ? `${Math.round(m)} 米` : `${(m / 1000).toFixed(1)} 公里`),
@@ -82,6 +83,7 @@ const TXT = {
     waterTemp: (t) => `Water about ${t}°C`, noWin: 'No good window',
     meta: (d) => `Est. water ${d.water_temp}°C · air ${fmt(d.air_min)}–${fmt(d.air_max)}°C · rain ${fmt(d.precip)} mm · sunrise ${d.sunrise} · sunset ${d.sunset}${d.moonrise ? ' · moonrise ' + d.moonrise : ''}${d.moonset ? ' · moonset ' + d.moonset : ''}`,
     placeMeta: (p, w, src) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · elevation ${p.elevation ?? '—'} m · water: ${w.toLowerCase()} (${src})`,
+    oxygenMeta: (o) => `City avg. DO ${fmt(o.value)} mg/L (${o.count} station${o.count === 1 ? '' : 's'}${o.time ? ', ' + o.time : ''})`,
     wsrc: { osm: 'recognised from the map', user: 'picked by you', default: 'not recognised' },
     lvDesc: ['Pick the right hours and expect steady bites', 'Pick the right hours and you should get bites', 'Fishable, but the bite will be slow', 'Tough; if you go, stick to the best window', 'Bad or unsafe weather; try another day'],
     weight: (w) => `${w}%`, km: (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`),
@@ -114,6 +116,8 @@ const S = {
   wSel: null,           // 当前选中的水体 {name, kind, water, geom}（WGS-84 GeoJSON），用于高亮与吸附
   fc: null, marine: null, flood: null, out: null, sel: 0,
   today: null,          // 取到 forecast 时冻结的“当地今天”，跨午夜重算也不漂移
+  city: null,           // 反向地名得到的城市，用于城市平均溶解氧
+  oxygenData: null,     // /data/oxygen.json（城市平均溶解氧）
   token: 0,
   basemap: 'amap',
 };
@@ -333,11 +337,14 @@ async function pickCandidate(c) {
 }
 
 // 反查地名（Nominatim，失败就不显示）。segment=水体名时拼成「汉江·襄阳段」
-async function reverseName(lat, lon, token, segment) {
+async function reverseName(lat, lon, token, segment, setName = true) {
   try {
     const j = await nomi('reverse', { lat: lat.toFixed(5), lon: lon.toFixed(5), zoom: segment ? '10' : '12' });
     if (token !== S.token) return;
     const a = j.address || {};
+    const city = a.city || a.county || a.town || a.state || '';
+    const cityChanged = city && city !== S.city;
+    S.city = city;
     let label;
     if (segment) {
       const pl = String(a.city || a.county || a.district || a.town || a.state || '').replace(/(市|县|区)$/, '');
@@ -347,7 +354,14 @@ async function reverseName(lat, lon, token, segment) {
       const up = a.city || a.county || a.state || '';
       label = [nm, up && up !== nm ? up : ''].filter(Boolean).join(TXT.sep);
     }
-    if (label) { S.name = label; syncUrl(); renderPlace(); updateTitle(); saveRecent(); }
+    if (label && (setName || segment)) {
+      S.name = label;
+      syncUrl();
+      saveRecent();
+      recompute();
+    } else if (cityChanged) {
+      recompute();
+    }
   } catch { /* 不显示地名 */ }
 }
 
@@ -464,7 +478,7 @@ function hideNearby() { nearbyToken++; S.nearby = []; $('nearby').hidden = true;
 async function choosePlace(lat, lon, name, opts = {}) {
   const token = ++S.token;
   S.lat = +lat; S.lon = ((+lon + 540) % 360) - 180; S.name = name || '';
-  S.fc = null; S.marine = null; S.flood = null; S.out = null; S.sel = 0; S.wAuto = null; S.today = null;
+  S.fc = null; S.marine = null; S.flood = null; S.out = null; S.sel = 0; S.wAuto = null; S.today = null; S.city = null;
   S.wPreset = opts.water || null;
   if (!opts.keepSel) S.wSel = null;
   hideNearby();   // 换钓点时清掉旧点的附近水体、旧高亮和在途请求
@@ -479,9 +493,8 @@ async function choosePlace(lat, lon, name, opts = {}) {
   const marineP = getJSON(marineUrl(S.lat, S.lon), {}, 15000).catch(() => null);
   const floodP = getJSON(floodUrl(S.lat, S.lon), {}, 15000).catch(() => null);
   const fcP = getJSON(forecastUrl(S.lat, S.lon), {}, 20000);
-  if (opts.segment) reverseName(S.lat, S.lon, token, opts.segment);
-  else if (!S.name) reverseName(S.lat, S.lon, token);
-  else saveRecent();
+  reverseName(S.lat, S.lon, token, opts.segment, !S.name);
+  if (S.name) saveRecent();
   try {
     const [fc, marine, flood] = await Promise.all([fcP, marineP, floodP]);
     if (token !== S.token) return;
@@ -511,11 +524,31 @@ function currentWater() {
   return { water: 'unknown', src: 'default' };
 }
 
+const CITY_ALIASES = {
+  '鹰潭': '鹰潭市', '贵溪': '鹰潭市', '贵溪市': '鹰潭市',
+  '余江': '鹰潭市', '余江区': '鹰潭市', '月湖': '鹰潭市', '月湖区': '鹰潭市',
+};
+function cityKey(c) { const s = String(c || '').trim(); return CITY_ALIASES[s] || s; }
+function currentOxygen() {
+  const city = cityKey(S.city);
+  const c = city && S.oxygenData?.cities?.[city];
+  if (!c || c.do == null) return null;
+  return { value: c.do, unit: 'mg/L', count: c.count, time: c.time, source: 'national-city-average' };
+}
+async function loadOxygenData() {
+  try {
+    const r = await fetch('/data/oxygen.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    S.oxygenData = await r.json();
+    recompute();
+  } catch { /* 没有数据就用 v0.4 代理 */ }
+}
+
 function recompute() {
   if (!S.fc) return;
   const { water, src } = currentWater();
   try {
-    S.out = computeForecast({ forecast: S.fc, marine: S.marine, flood: S.flood, species: S.sp, water, waterSource: src, name: S.name, lang: LANG, now: S.today || localToday(S.fc) });
+    S.out = computeForecast({ forecast: S.fc, marine: S.marine, flood: S.flood, oxygen: currentOxygen(), species: S.sp, water, waterSource: src, name: S.name, lang: LANG, now: S.today || localToday(S.fc) });
   } catch (e) {
     console.error(e);
     S.out = null;
@@ -561,7 +594,8 @@ function renderPlace() {
   if (!S.out) return;
   const p = S.out.place;
   $('place-name').textContent = S.name || TXT.unnamed;
-  $('place-meta').textContent = TXT.placeMeta(p, TXT.water[p.water], TXT.wsrc[p.water_source]);
+  $('place-meta').textContent = TXT.placeMeta(p, TXT.water[p.water], TXT.wsrc[p.water_source])
+    + (S.out.oxygen ? `${TXT.sep}${TXT.oxygenMeta(S.out.oxygen)}` : '');
 }
 function updateTitle() {
   const d = S.out && S.out.days[S.sel];
@@ -889,3 +923,4 @@ cv.addEventListener('pointerdown', chartPointer);
 let rT = 0;
 window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => drawChart(), 120); });
 readUrl();
+loadOxygenData();

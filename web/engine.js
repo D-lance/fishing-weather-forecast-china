@@ -270,6 +270,7 @@ const SAFETY = {
     heat: '气温 35℃ 以上，防中暑，多带水、找树荫',
     ice: '可能结冰：冰钓安全第一，冰厚不到 10 厘米不上冰',
     oxygen: '高温、低压、无风，浅水容易缺氧浮头；找活水、增氧机或深水，别钓浅滩',
+    oxygenWarn: '实测溶解氧偏低，鱼口可能受影响；找活水、增氧机或深水',
     oxygenIce: '冰下可能缺氧，注意鱼浮头；冰钓先测冰厚',
   },
   en: {
@@ -280,6 +281,7 @@ const SAFETY = {
     heat: 'Air ≥ 35°C: beware of heatstroke, bring water, find shade',
     ice: 'Possible ice: safety first, never go on ice thinner than 10 cm',
     oxygen: 'Hot, low pressure and calm: shallow water may lose oxygen; fish deeper or near moving/aerated water',
+    oxygenWarn: 'Measured dissolved oxygen is low; the bite may suffer. Fish moving or aerated water.',
     oxygenIce: 'Oxygen may run low under ice; watch for gasping fish; test ice thickness',
   },
 };
@@ -612,6 +614,8 @@ const SUB_KEYS = Object.keys(WEIGHTS);
  * @param {object} o
  * @param {object} o.forecast   Open-Meteo forecast 原始响应（past_days=7, forecast_days=8）
  * @param {object} [o.marine]   Open-Meteo marine 原始响应，或 null
+ * @param {object} [o.flood]    Open-Meteo flood 原始响应，或 null
+ * @param {object} [o.oxygen]   城市平均实测溶解氧 { value, unit, count, time, source }；只作用于第一个显示日
  * @param {string} [o.species]  鱼种 key，默认 crucian
  * @param {string} [o.water]    reservoir|lake|river|pond|sea|unknown
  * @param {string} [o.waterSource] osm|user|default
@@ -630,6 +634,7 @@ export function computeForecast(o) {
   const sp = SPECIES.find((x) => x.key === o.species) || SPECIES.find((x) => x.key === DEFAULT_SPECIES);
   const spName = lang === 'en' ? sp.en : sp.name;
   const water = WATER_TYPES.includes(o.water) ? o.water : 'unknown';
+  const ox = o.oxygen && Number.isFinite(o.oxygen.value) ? o.oxygen : null;
   const offMs = (fc.utc_offset_seconds || 0) * 1000;
   const lat = fc.latitude, lon = fc.longitude;
   const H = fc.hourly;
@@ -755,6 +760,7 @@ export function computeForecast(o) {
     species: sp.key,
     model_version: MODEL_VERSION,
     timezone: fc.timezone || '',
+    oxygen: ox ? { ...ox, applied_date: D.time[firstDi] || null } : null,
     days: [],
   };
 
@@ -771,6 +777,7 @@ export function computeForecast(o) {
     const dT = Ta[di] != null && di > 0 && Ta[di - 1] != null ? Ta[di] - Ta[di - 1] : null;
     const ft = floodTrend(o.flood, date);
     const tideRange = isSea ? tideRangeForDay(mar, date) : null;
+    const measuredOxygen = ox && di === firstDi ? ox : null;   // 实测值只覆盖第一个显示日
 
     const ds = dayStart[di];
     const me = moonEvents(date);
@@ -816,9 +823,12 @@ export function computeForecast(o) {
       if (isSea && wave != null && wave >= 2.5) { h = Math.min(h, 15); flags.push('wave'); }
       if (prec[i] != null && prec[i] >= 8) { h = Math.min(h, 35); flags.push('rain'); }
       if (temp[i] != null && temp[i] >= 35) flags.push('heat');
-      const ox = oxygenRisk({ water, season, wind: v, P: P[i], pNorm, t, ice });
-      if (ox.severe) { h = Math.min(h, 45); flags.push('oxygen'); }
-      if (ox.iceLow) flags.push('oxygenIce');
+      const oxr = oxygenRisk({ water, season, wind: v, P: P[i], pNorm, t, ice });
+      if (measuredOxygen) {
+        if (measuredOxygen.value < 3) { h = Math.min(h, 45); flags.push('oxygen'); }
+        else if (measuredOxygen.value < 5) flags.push('oxygenWarn');
+      } else if (oxr.severe) { h = Math.min(h, 45); flags.push('oxygen'); }
+      if (oxr.iceLow) flags.push('oxygenIce');
       for (const f of flags) (safetyHits[f] = safetyHits[f] || []).push(t);
       hours.push({ t: fmtISO(t), h, g, sub, why, flags });
     }
@@ -879,7 +889,7 @@ export function computeForecast(o) {
     advice.push(seasonalAdvice(date, sp, L));
 
     // 安全提示（§4）：每类一天一条；连续命中的小时合成「09:00–11:00」，不连续的用顿号分开「09:00、18:00」；结冰整天一条
-    const order = ['thunder', 'gale', 'wave', 'rain', 'heat', 'oxygen', 'oxygenIce'];
+    const order = ['thunder', 'gale', 'wave', 'rain', 'heat', 'oxygen', 'oxygenWarn', 'oxygenIce'];
     const alerts = order.filter((k) => safetyHits[k]).map((k) => {
       const ts = safetyHits[k];
       const runs = [[ts[0], ts[0]]];
@@ -909,6 +919,7 @@ export function computeForecast(o) {
       river_discharge: ft.q,
       tide_range: tideRange,
       oxygen_risk: hours.some((x) => x.flags.includes('oxygen')),
+      oxygen_warn: hours.some((x) => x.flags.includes('oxygenWarn')),
       hours: hours.map((x) => ({ t: x.t, h: round1(x.h), hs: round1(x.hs), flags: x.flags })),
     });
   }

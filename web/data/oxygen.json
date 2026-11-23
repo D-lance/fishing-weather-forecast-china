@@ -1,0 +1,81 @@
+{
+  "source": "国家地表水水质自动监测实时数据发布系统",
+  "endpoint": "https://szzdjc.cnemc.cn:8070/GJZ/Ajax/Publish.ashx",
+  "fetched_at": "2026-11-23T08:44:27.683Z",
+  "cities": {
+    "鹰潭市": {
+      "do": 9.44,
+      "count": 4,
+      "station_count": 4,
+      "time": "11-23 16:00",
+      "stations": [
+        {
+          "name": "炭埠周家",
+          "province": "江西省",
+          "basin": "长江流域",
+          "time": "11-23 16:00",
+          "do": 11.1,
+          "water_class": "2"
+        },
+        {
+          "name": "白塔河河口",
+          "province": "江西省",
+          "basin": "长江流域",
+          "time": "11-23 16:00",
+          "do": 9.67,
+          "water_class": "2"
+        },
+        {
+          "name": "土桥",
+          "province": "江西省",
+          "basin": "长江流域",
+          "time": "11-23 16:00",
+          "do": 8.09,
+          "water_class": "2"
+        },
+        {
+          "name": "流口村",
+          "province": "江西省",
+          "basin": "长江流域",
+          "time": "11-23 16:00",
+          "do": 8.91,
+          "water_class": "2"
+        }
+      ]
+    }
+  },
+  "stations": [
+    {
+      "name": "炭埠周家",
+      "province": "江西省",
+      "basin": "长江流域",
+      "time": "11-23 16:00",
+      "do": 11.1,
+      "water_class": "2"
+    },
+    {
+      "name": "白塔河河口",
+      "province": "江西省",
+      "basin": "长江流域",
+      "time": "11-23 16:00",
+      "do": 9.67,
+      "water_class": "2"
+    },
+    {
+      "name": "土桥",
+      "province": "江西省",
+      "basin": "长江流域",
+      "time": "11-23 16:00",
+      "do": 8.09,
+      "water_class": "2"
+    },
+    {
+      "name": "流口村",
+      "province": "江西省",
+      "basin": "长江流域",
+      "time": "11-23 16:00",
+      "do": 8.91,
+      "water_class": "2"
+    }
+  ]
+}

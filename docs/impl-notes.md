@@ -51,3 +51,6 @@
 - 低氧 flag：`pond/lake + hot + wind<2 + P<pNorm−5 + 夜间` → 小时封顶 45 + `oxygen` 提示；`ice` + 小水体 → `oxygenIce` 提示，不封顶。没有实测溶氧，不输出 mg/L。
 - 季节建议：总是追加一条 `advice`，不影响分数；Python 基准文案需同步。
 - Flood API 的 `past_days` 兼容性在目标网络需实测；不支持时 `floodP` 会 catch 成 null，评分退回 v0.3，不影响主流程。
+- 城市平均溶解氧：`tools/fetch-oxygen.mjs` 请求国家发布系统（`AreaID=360000`，POST `Publish.ashx`），按 `cities` 映射平均，输出 `web/data/oxygen.json`；构建复制到 `site/data`。
+- 国家接口 CORS 只允许 `https://szzdjc.cnemc.cn`，浏览器不能从本站直连；用 CI/定时任务抓，页面同源读 `/data/oxygen.json`。建议 30–60 分钟一次。
+- App 用 Nominatim reverse 的 `city/county` 归一化（鹰潭/贵溪/余江/月湖），只有 `cities[city].do` 存在才传 `oxygen`；只覆盖第一个显示日，其他天仍用代理。

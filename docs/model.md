@@ -260,6 +260,11 @@ Overpass 得到 `unknown`（例如地名点落在大湖正中，1500 m 内没有
 - `ice = true` 且 pond/lake：加 `oxygenIce` 提示，不封顶。
 - 这是安全封顶/提示，不是第 9 个加权分项；§3 里 `P < hypoxia & 高温 & 无风` 的 −20 仍保留。
 - 没有溶氧/叶绿素实测数据，这是风险代理，不输出 mg/L。
+- 若调用方传入 `oxygen = { value, unit:'mg/L', count, time, source }`（城市平均实测），则**只对第一个显示日**覆盖代理：
+  - `value < 3` → 该日小时封顶 45 + `oxygen` 提示；
+  - `3 ≤ value < 5` → `oxygenWarn` 提示，不封顶；
+  - `value ≥ 5` → 不触发。
+  - 其他天仍用天气代理；城市平均不代表具体钓点。
 
 ### 10.5 季节 / 产卵 / 洄游建议（只进 advice）
 
@@ -272,8 +277,9 @@ Overpass 得到 `unknown`（例如地名点落在大湖正中，1500 m 内没有
 
 ### 10.6 输出与兼容
 
-- 新增日字段：`discharge_trend`（rising/falling/stable/unknown）、`river_discharge`、`tide_range`、`oxygen_risk`。
-- 小时 `flags` 新增 `oxygen` / `oxygenIce`；安全提示按 §4 的聚合规则输出。
+- 新增日字段：`discharge_trend`（rising/falling/stable/unknown）、`river_discharge`、`tide_range`、`oxygen_risk`、`oxygen_warn`。
+- 顶层 `oxygen`：若传入实测值，回显 `{value,count,time,source,applied_date}`；只作用于 `applied_date`。
+- 小时 `flags` 新增 `oxygen` / `oxygenWarn` / `oxygenIce`；安全提示按 §4 的聚合规则输出。
 - `model_version = 0.4`。
 - Python 基准需实现同一套公式和文案；fixtures 需要包含 `surface_pressure`、Flood API、marine 新字段中的至少一部分，否则退回 v0.3 行为。
 - 没有新数据时：气压、水域、潮汐分与 v0.3 一致；季节建议仍会追加。

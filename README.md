@@ -38,6 +38,7 @@
 | 项目 | 用途 | 许可 |
 |---|---|---|
 | [Open-Meteo](https://open-meteo.com/) | 天气（含 `surface_pressure`）、海况/潮位/海流/浪周期、河道径流（Flood API）；浏览器直连，免 key | 数据 CC BY 4.0 |
+| 国家地表水水质自动监测实时数据发布系统 | 鹰潭市城市平均溶解氧（`tools/fetch-oxygen.mjs` 定时抓取，页面读同源 JSON） | 公共数据，按原站条款使用 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright)（Nominatim、Overpass、底图瓦片） | 地名搜索、判断水域类型、英文底图 | ODbL |
 | 高德地图 | 中文底图瓦片 | 版权归高德所有，仅作底图展示 |
 | [SunCalc](https://github.com/mourner/suncalc) | 日出日落、月相、月出月落（内联于 `web/engine.js`） | BSD-2-Clause |
@@ -48,9 +49,9 @@
 ## 目录结构
 
 ```
-web/            网页源码：index.html（中文，唯一源）、app.js（界面）、engine.js（鱼情引擎）、coord.js（高德坐标换算）、assets/
+web/            网页源码：index.html（中文，唯一源）、app.js（界面）、engine.js（鱼情引擎）、coord.js（高德坐标换算）、assets/、data/oxygen.json（城市平均溶解氧）
 i18n/en.json    英文词典，构建时整句替换生成英文页
-tools/          build.mjs（构建 site/）、test-engine.mjs（引擎回归）、check-fixtures.mjs（与 Python 版对分）、test-coord.mjs、make-og.mjs
+tools/          build.mjs（构建 site/）、test-engine.mjs（引擎回归）、fetch-oxygen.mjs（鹰潭城市平均溶解氧）、check-fixtures.mjs（与 Python 版对分）、test-coord.mjs、make-og.mjs
 android/        安卓 App：原生 WebView 壳，把 site/ 打包进 APK
 docs/           model.md（评分口径）、impl-notes.md（实现细节）、测试用例/、截图
 fixtures/       Python 基准对分样例说明（见 fixtures/README.md）
@@ -68,6 +69,7 @@ serve-dev.mjs   本地预览服务器
 ```bash
 node tools/build.mjs      # 生成 site/（中文 / 和英文 /en/）
 node serve-dev.mjs        # 打开 http://127.0.0.1:8791 预览
+node tools/fetch-oxygen.mjs --out web/data/oxygen.json # 更新鹰潭城市平均溶解氧（建议 30–60 分钟一次）
 node tools/test-engine.mjs # 引擎回归（合成 Open-Meteo 数据）
 node tools/test-coord.mjs # 坐标换算自测
 node tools/check-fixtures.mjs # 与 Python 基准对分（需要 fixtures/ 样例）

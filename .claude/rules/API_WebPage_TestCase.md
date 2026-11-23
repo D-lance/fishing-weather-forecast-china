@@ -87,6 +87,7 @@
 | TC-SCORE-R-007 | 潮差/流速/浪周期 | P1 | 海钓，marine 含三项 | 月相/潮理由含潮差、流速、浪周期；缺项不写 |
 | TC-SCORE-R-008 | 低氧 flag | P0 | 池塘 + 30℃ + 无风 + 低压 + 夜间 | oxygen flag、封顶 45、安全提示存在 |
 | TC-SCORE-R-009 | 季节建议 | P1 | 4 月/7 月黑鱼/1 月 | advice 含春季/护崽/冬季；分数不变 |
+| TC-SCORE-R-010 | 城市平均溶氧 | P0 | `oxygen` 2.5/4/6 mg/L | 2.5 封顶+oxygen；4 触发 oxygenWarn；6 不触发；只作用于第一显示日 |
 
 > 引擎回归优先用 `node tools/test-engine.mjs`；有 Python fixtures 时再跑 `node tools/check-fixtures.mjs`。
 
