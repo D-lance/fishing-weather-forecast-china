@@ -22,7 +22,8 @@
 |---|---|
 | 地名→坐标 | 先查 `https://nominatim.openstreetmap.org/search?q=<名>&format=jsonv2&accept-language=zh&countrycodes=cn&limit=8`（UA `fishcast/0.1 (WorkBuddy skill; +https://fish.satloot.com; admin@satloot.com)`，加参数 `email=admin@satloot.com`）；无结果或失败再查 `https://geocoding-api.open-meteo.com/v1/search?name=<名>&language=zh&count=8` |
 | 坐标→地名 | `https://nominatim.openstreetmap.org/reverse?format=json&accept-language=zh&lat=&lon=&email=admin@satloot.com`（带同一个 UA，失败就不显示地名） |
-| 天气 | `https://api.open-meteo.com/v1/forecast` 参数：`latitude,longitude,timezone=auto,past_days=7,forecast_days=8,wind_speed_unit=ms`，`hourly=temperature_2m,relative_humidity_2m,pressure_msl,surface_pressure,cloud_cover,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m`，`daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum`；过去日期用 `https://historical-forecast-api.open-meteo.com/v1/forecast` 同参数，`past_days/forecast_days` 换成 `start_date/end_date`。`forecast_days=8` 是为了热季最后一天能拿到 `d+1 00:00–02:00`；网页端用 `localToday()` 从今天起只显示 7 天 |
+| 天气 | `https://api.open-meteo.com/v1/forecast`，主源 `models=cma_grapes_global`（CMA GRAPES 全球），回退 `models=best_match`。参数：`latitude,longitude,timezone=auto,past_days=7,forecast_days=6,wind_speed_unit=ms`，`hourly=temperature_2m,relative_humidity_2m,pressure_msl,surface_pressure,cloud_cover,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m`，`daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum`，`current=temperature_2m,relative_humidity_2m,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m`；过去日期用 `https://historical-forecast-api.open-meteo.com/v1/forecast` 同参数，`past_days/forecast_days` 换成 `start_date/end_date`。网页显示 5 天；`forecast_days=6` 是为了热季最后一天能拿到 `d+1 00:00–02:00`。CMA 的 `precipitation_probability` 为空，末端可能缺 `surface_pressure/wind_gusts_10m/weather_code`，由 `best_match` 按时间/字段补齐；CMA 06Z 轮次可能只有 5 天，缺的第 6 天也由 `best_match` 补。**温度字段（`temperature_2m` / `temperature_2m_max` / `temperature_2m_min`）优先 `best_match`**：CMA 对鹰潭最高温系统性偏低约 2–4℃；今日 `current.temperature_2m` 仍用 CMA 实况 |
+| 天气展示（仅页面天气带，不参与评分） | `http://www.weather.com.cn/weather/101241101.shtml` 的天气现象/最高最低温/风，`http://d1.weather.com.cn/weather_index/101241101.html` 的当前实况；由 `tools/fetch-weather-cn.mjs` 定时抓成 `web/data/weather-cn.json`（页面读同源 JSON，12 小时内有效）。缺失/过期时回退 Open-Meteo。中国天气网没有气压/阵风/逐小时云量，不能作为 v0.7 评分输入 |
 | 海况（仅海钓/近海） | `https://marine-api.open-meteo.com/v1/marine` 参数：`latitude,longitude,timezone=auto,past_days=1,forecast_days=8,hourly=wave_height,wave_period,sea_surface_temperature,sea_level_height_msl,ocean_current_velocity,ocean_current_direction`；全是 null = 内陆，按淡水处理 |
 | 河道径流 | `https://flood-api.open-meteo.com/v1/flood` 参数：`latitude,longitude,daily=river_discharge,past_days=7,forecast_days=8`；GloFAS 最近网格，湖泊/海边可能为 null。只用于 river/reservoir 的涨落趋势，不直接当水位 |
 | 海拔 | forecast 返回的 `elevation` 字段即可 |
@@ -176,7 +177,7 @@ Overpass 得到 `unknown`（例如地名点落在大湖正中，1500 m 内没有
 ## 6. 日分与最佳时段
 
 - 参与计算的小时：d 日本地 04:00–22:00（19 个整点）；season=hot 时再加 d 日 23:00 与 d+1 日 00:00、01:00、02:00（夜钓）。
-  - 网页端请求 `forecast_days=8`，并用 `localToday()` 从今天起取 7 天；多出的第 8 天只用于给最后一天提供 d+1 00–02 小时，不会显示成第 8 张卡。
+  - 网页端请求 `forecast_days=6`，并用 `localToday()` 从今天起取 5 天；多出的第 6 天只用于给最后一天提供 d+1 00–02 小时，不会显示成第 6 张卡。
 - 先对小时分做 3 小时居中滑动平均 `Hs`；只在这串参与小时内部做，两端用 2 个值平均。
 - **日分** = `round(0.6·A6 + 0.4·Aall)`：`A6` = 当日 `Hs` 最高 6 个值的均值（不足 6 个就全部；「挑对时间去能有多好」），`Aall` = 全部参与小时 `Hs` 的均值（「这一天整体怎么样」）。
 - **危险封顶**（在参与小时里数，数的是 §4 的小时级命中）：

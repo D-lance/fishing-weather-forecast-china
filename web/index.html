@@ -5,19 +5,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>钓鱼天气预报_今日鱼情查询_出钓指数（江河湖海水库·野钓路亚海钓）- 今日鱼情</title>
-  <meta name="description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来7天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
+  <meta name="description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来5天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
   <meta name="keywords" content="钓鱼天气,鱼情,钓鱼指数,出钓指数,野钓,路亚,海钓,潮汐,水库钓鱼,江河钓鱼,钓鱼天气预报,今日鱼情">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="今日鱼情">
   <meta property="og:title" content="钓鱼天气预报_今日鱼情查询_出钓指数（江河湖海水库·野钓路亚海钓）- 今日鱼情">
-  <meta property="og:description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来7天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
+  <meta property="og:description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来5天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
   <meta property="og:image" content="https://fish.satloot.com/assets/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="今日鱼情：钓鱼天气预报与未来 7 天出钓指数">
+  <meta property="og:image:alt" content="今日鱼情：钓鱼天气预报与未来 5 天出钓指数">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="钓鱼天气预报_今日鱼情查询_出钓指数（江河湖海水库·野钓路亚海钓）- 今日鱼情">
-  <meta name="twitter:description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来7天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
+  <meta name="twitter:description" content="免费钓鱼天气预报与鱼情分析：江、河、湖、海、水库按地图选水域，看未来5天出钓指数、最佳钓鱼时间、气压水温潮汐、钓位饵料建议，野钓路亚海钓都能用。">
   <meta name="twitter:image" content="https://fish.satloot.com/assets/og.png">
   <meta name="theme-color" content="#f7f6f3">
   <link rel="manifest" href="/manifest.json">
@@ -134,8 +134,8 @@
     .alert-box ul { margin: 0; padding-left: 18px; }
     .alert-box li { margin: 2px 0; }
 
-    /* 7 天卡片 */
-    .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    /* 5 天卡片 */
+    .days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
     .day { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 8px 10px; text-align: center; cursor: pointer; box-shadow: var(--shadow); height: auto; white-space: normal; display: block; width: 100%; }
     .day:hover { background: #fcfbf9; }
     .day[aria-pressed=true] { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft), var(--shadow); }
@@ -166,6 +166,7 @@
     .wx-kind { font-size: 15px; }
     .wx-temp { margin-left: auto; font-size: 16px; font-weight: 700; }
     .wx-sub { margin-top: 4px; font-size: 13px; color: var(--body); }
+    .wx-source { margin-top: 2px; font-size: 12px; color: var(--muted); }
     .best-pick { margin-top: 12px; border: 1px solid var(--line); background: var(--brand-soft); border-radius: 12px; padding: 12px 14px; }
     .best-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .best-head .best-label { color: var(--brand-deep); font-weight: 600; }
@@ -254,7 +255,7 @@
     <div class="wrap">
       <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0f766e"/><path d="M5 16c4-6.5 12-6.5 16.5 0C17 22.5 9 22.5 5 16z" fill="#fff"/><path d="M21 16l6-5v10z" fill="#fff"/><circle cx="10" cy="15" r="1.4" fill="#0f766e"/></svg>今日鱼情</a>
       <nav>
-        <a class="hide-sm" href="#forecast">7 天预报</a>
+        <a class="hide-sm" href="#forecast">5 天预报</a>
         <a href="#notes">出钓指数说明</a>
         <a class="lang-switch" href="/en/" hreflang="en" lang="en" data-nolang>EN</a>
       </nav>
@@ -264,7 +265,7 @@
   <main class="wrap">
     <section class="hero">
       <h1>钓鱼天气预报 · 鱼情分析 · 出钓指数</h1>
-      <p class="lead">按天气和地理给鹰潭钓友出未来 7 天的出钓指数、最佳钓鱼时间、钓位水层饵料建议和安全提示。当前按信江（鹰潭段）出预报。</p>
+      <p class="lead">按天气和地理给鹰潭钓友出未来 5 天的出钓指数、最佳钓鱼时间、钓位水层饵料建议和安全提示。当前按信江（鹰潭段）出预报。</p>
     </section>
 
     <section class="card panel" id="pick">

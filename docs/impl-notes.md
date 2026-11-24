@@ -12,7 +12,7 @@
 | `wind_speed_10m` 缺失且用于 `S_geo` | 按 3.0 m/s（不触发池塘缺氧扣分） | `engine.js` 主循环 `sGeo` 调用 |
 | `d24` 缺失但 `d3 ≤ −1.0` | 仍给 +5「短时降压」；文档只写 `d24 > −6`，缺数据时按不阻塞处理 | `engine.js` `sPressure` |
 | `marine` 请求失败 / 全 null | 按淡水处理；不回潮汐；水温退回淡水公式 | `engine.js` `marineAvailable` / `computeForecast` |
-| `daily` 某天缺 `W` | 跳过该天；网页端若 7 天不足，按实际天数渲染 | `engine.js` 主循环 |
+| `daily` 某天缺 `W` | 跳过该天；网页端若 5 天不足，按实际天数渲染 | `engine.js` 主循环 |
 | `sunrise/sunset` 缺失 | `S_time` 跳过晨昏/夜间分支，按中午/白天规则 | `engine.js` `sTime` |
 
 ## 2. 时间与小时
@@ -20,7 +20,7 @@
 - Open-Meteo `timezone=auto` 返回的 `YYYY-MM-DDTHH:MM` 被当作“本地分钟数”（伪 UTC）解析；需要真实时刻（月亮）时再减 `utc_offset_seconds`。
 - 午间是半开区间 `[11:00, 15:00)`。
 - 参与小时：非热季 `04:00–22:00`（19 个）；热季 `04:00–23:00` + `d+1 00:00–02:00`（23 个）。
-- 网页端 `forecast_days=8`，`localToday(fc)` 从今天起取 7 天；第 8 天只给最后一天补 `d+1 00–02`。不要把 8 天直接显示成 8 张卡，也不要用 `firstDi = nd - 7`（会把首日变成明天）。
+- 网页端 `forecast_days=6`，`localToday(fc)` 从今天起取 5 天；第 6 天只给最后一天补 `d+1 00–02`。不要把 6 天直接显示成 6 张卡，也不要用 `firstDi = nd - 5`（会把首日变成明天）。
 
 ## 3. 日月
 
@@ -64,19 +64,21 @@
 - `recompute()` 每种鱼各算一次 `computeForecast`（v0.7）和一次 `model:'0.5'` 旧模型对比，分别存到 `S.outs[key]`；旧模型挂在各自输出的 `shadow`，详情显示“旧模型 0.5”。v0.6 影子代码保留但不再展示。
 - `web/rank.js` 的 `rankDay(outputs, date)` 按 `score` 降序，同分按 `TARGET_SPECIES` 的输入顺序；`bestByDate` 给每天 `top + ranking`。`S.days` 会丢掉 4 种全缺的日期。
 - `mergeAlerts` 合并所有鱼种的 `alerts`，按 `date + line` 去重；同一场雷暴/大风不会因为 4 个鱼种显示 4 遍。
-- 封顶/低氧标记由 `rank.js` 的 `dayFlagKeys(day)` 统一给出：有 `day_cap` 时返回 `cap`（用 `cap_kinds` 显示“雷暴/大风/浪封顶”），并保留 `rain/oxygen/oxygenWarn`；没有 `day_cap` 时返回逐项告警。7 天卡片、主钓卡和排行行都用同一套标记。
-- 7 天卡片用当天 `top` 的分数、等级、时段和封顶；详情 `dhead`/`#d-best` 跟随 `S.focus`：看第一名时标“主钓”，点排行看其他鱼时标“查看”，分数/等级/时段/建议都切到该鱼种；排行第一名的“主钓”徽标不变。点排行只改 `S.focus`，不重算天气；点日期会把 `S.focus` 重置为该日 top。
+- 封顶/低氧标记由 `rank.js` 的 `dayFlagKeys(day)` 统一给出：有 `day_cap` 时返回 `cap`（用 `cap_kinds` 显示“雷暴/大风/浪封顶”），并保留 `rain/oxygen/oxygenWarn`；没有 `day_cap` 时返回逐项告警。5 天卡片、主钓卡和排行行都用同一套标记。
+- 5 天卡片用当天 `top` 的分数、等级、时段和封顶；详情 `dhead`/`#d-best` 跟随 `S.focus`：看第一名时标“主钓”，点排行看其他鱼时标“查看”，分数/等级/时段/建议都切到该鱼种；排行第一名的“主钓”徽标不变。点排行只改 `S.focus`，不重算天气；点日期会把 `S.focus` 重置为该日 top。
 - 主钓/排行文案是“按鱼种鱼情排序”；主钓卡显示 `水温 X℃，<鱼种>适温 lo–hi℃；鱼种权重见下方`，最佳时段下显示 `best_why.time`/`best_why.wind`（为什么是这段），详情 `#d-meta` 显示 `水温闸门 ×0.XX`。v0.7 鱼种分差来自鱼种权重、时段活动、水域偏好、季节和溶氧；其余天气项共用。
-- `rank.js` 的 `allOptimal(entry)` 只在选中鱼种水温分都为 100 **且日分相同**时返回 true：7 天卡片显示“都适温”，主钓卡改成“N 种都适温，按你常钓的鱼和饵准备”，排行不再标“主钓”，详情不显示“（主钓）”。
+- `rank.js` 的 `allOptimal(entry)` 只在选中鱼种水温分都为 100 **且日分相同**时返回 true：5 天卡片显示“都适温”，主钓卡改成“N 种都适温，按你常钓的鱼和饵准备”，排行不再标“主钓”，详情不显示“（主钓）”。
 - `S.out` 始终等于 `S.outs[S.focus]`，`renderPlace`/`drawChart` 仍可用；`drawChart` 用日期找当前查看鱼种的 day，避免缺天时下标错位。
 - URL 不再写 `sp`；旧 `sp=` 忽略，仍显示 4 种排序。单个鱼种计算失败会跳过；4 种全失败才显示天气错误。
 
-## 8. 日期天气带
+## 8. 天气源与日期天气带
 
-- `web/weather.js` 的 `summarizeDay(fc, date)` 从现有 `S.fc` 汇总：白天 06–18 点，没有白天小时退回当天全部小时；天气现象取最高严重度；风取白天最大风速及对应风向；降水概率取最大；湿度取非空平均。
-- `app.js` 的 `renderWeather(entry)` 填充 `#pick` 的 `.opts` 第二列 `#d-weather`；主行是“鹰潭 · 今天/明天/周X 日期 + 图标 + 天气 + 高低温”，副行是风/降水概率/湿度。切日期走 `renderDetail`，不发新请求。
+- 主源 `models=cma_grapes_global`，回退 `models=best_match`；`web/weather.js` 的 `mergeForecast` 按 `hourly.time` / `daily.time` 对齐，主源非空值优先，null/缺行用回退源。CMA 的 `precipitation_probability` 全为空，末端可能缺 `surface_pressure/wind_gusts_10m/weather_code`，由回退源补齐；`forecast_days=6` 只显示 5 天。**预报温度（`temperature_2m` / 日高低温）优先 `best_match`**，因为 CMA 对鹰潭最高温偏低；`current.temperature_2m` 仍用 CMA。
+- 中国天气网展示：`tools/fetch-weather-cn.mjs` 定时把 `http://www.weather.com.cn/weather/101241101.shtml`（7 天）和 `http://d1.weather.com.cn/weather_index/101241101.html`（当前实况）抓成 `web/data/weather-cn.json`；`app.js` 的 `loadWeatherCnData()` 读同源 JSON，`cnFresh()` 只接受 12 小时内的数据。天气带优先用 `cnDay`：今天用 `cn.current` 显示“现在”，未来天用中国天气网的天气现象/高低温/风；降水概率/湿度仍由 `summarizeDay()` 补。缺失或过期回退 Open-Meteo，并在天气带下方显示数据来源。
+- `web/weather.js` 的 `summarizeDay(fc, date)`：今天优先 `fc.current`（现在实况）；未来天有降水/雷暴取最严重，否则取 06–18 点的主导天气；风取白天最大风速及对应风向；降水概率取最大；湿度取非空平均。没有白天小时退回当天全部小时。
+- `app.js` 的 `renderWeather(entry)` 填充 `#pick` 的 `.opts` 第二列 `#d-weather`；主行是“鹰潭 · 信江 · 今天/明天/周X 日期 + 图标 + 现在/白天 + 天气 + 温度（今天带高低温）”，副行是风/降水概率/湿度，底行是数据来源。切日期走 `renderDetail`，不发新请求。
 - 缺单项显示 `—`；整日无数据隐藏天气带。`#d-meta` 不再重复气温，保留水温、降水量、日出日落、月相。
-- 天气带只做展示，不参与评分；英文页保留最小动态键，避免缺字段。
+- 天气带只做展示；评分使用合并后的 `S.fc`（Open-Meteo），中国天气网 JSON 不参与 v0.7 评分。英文页保留最小动态键，避免缺字段。
 
 ## 9. 整页长图（浏览器）
 

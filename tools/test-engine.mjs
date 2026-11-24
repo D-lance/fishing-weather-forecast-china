@@ -72,10 +72,16 @@ function makeFlood({ values = null, start = START, ndays = NDAYS } = {}) {
   return { daily: { time: dates, river_discharge: values || dates.map(() => 10) } };
 }
 
-// ── URL：热季最后一天需要次日 00–02 点 ──
-test('forecastUrl 请求 8 个预报日', () => {
+// ── URL：CMA 主源 6 个预报日，第 6 天给热季最后一天补次日 00–02 点 ──
+test('forecastUrl 默认 CMA 主源、6 个预报日、带 current', () => {
   const url = engine.forecastUrl(31.2, 120.2);
-  assert(/[?&]forecast_days=8(?:&|$)/.test(url), `实际：${url}`);
+  assert(/[?&]models=cma_grapes_global(?:&|$)/.test(url), `实际：${url}`);
+  assert(/[?&]forecast_days=6(?:&|$)/.test(url), `实际：${url}`);
+  assert(/[?&]current=temperature_2m/.test(url), `实际：${url}`);
+});
+test('forecastUrl 可切换到 best_match 回退', () => {
+  const url = engine.forecastUrl(31.2, 120.2, { model: 'best_match' });
+  assert(/[?&]models=best_match(?:&|$)/.test(url), `实际：${url}`);
 });
 test('marineUrl 请求 8 个预报日', () => {
   const url = engine.marineUrl(31.2, 120.2);
@@ -132,6 +138,21 @@ test('热季最后一天在 15 天响应下有 23 个参与小时', () => {
   const last = out.days[6];
   assert(last.date === '2026-11-29', `末日=${last.date}`);
   assert(last.season === 'hot', `末日季节=${last.season}`);
+  assert(last.hours.length === 23, `末日小时数=${last.hours.length}`);
+  const times = last.hours.map((h) => h.t.slice(11));
+  assert(times.includes('00:00') && times.includes('01:00') && times.includes('02:00'), `末日小时=${times.join(',')}`);
+});
+
+// ── 网站 5 天输出：第 6 个预报日只给热季最后一天补次日 00–02 ──
+test('网站 5 天输出，热季最后一天仍有次日 00–02', () => {
+  const out = engine.computeForecast({
+    forecast: makeWeather({ start: Date.UTC(2026, 6, 1), base: 30 }), species: 'crucian', water: 'lake',
+    now: '2026-07-08', days: 5,
+  });
+  assert(out.days.length === 5, `days=${out.days.length}`);
+  assert(out.days[0].date === '2026-07-08', `首日=${out.days[0].date}`);
+  const last = out.days[4];
+  assert(last.date === '2026-07-12', `末日=${last.date}`);
   assert(last.hours.length === 23, `末日小时数=${last.hours.length}`);
   const times = last.hours.map((h) => h.t.slice(11));
   assert(times.includes('00:00') && times.includes('01:00') && times.includes('02:00'), `末日小时=${times.join(',')}`);
@@ -249,6 +270,12 @@ test('app.js 鹰潭专用模式：默认点、边界、台钓、四种鱼主钓�
   assert(/summarizeDay/.test(app) && /\$\('d-weather'\)/.test(app), '缺少日期天气带');
   assert(/renderWeather/.test(app), '缺少天气渲染');
   assert(/TXT\.wxPlace/.test(app), '缺少天气地点文案');
+  assert(/loadWeatherCnData/.test(app) && /\/data\/weather-cn\.json/.test(app), '缺少中国天气网快照加载');
+  assert(/cnKind/.test(app) && /cnWindParts/.test(app), '缺少中国天气网天气/风映射');
+  assert(/mergeForecast/.test(app) && /mergeForecast\(primary, fallback\)/.test(app), '缺少 CMA 主源合并');
+  assert(/PRIMARY_FORECAST_MODEL/.test(app) && /FALLBACK_FORECAST_MODEL/.test(app), '缺少主源/回退模型选择');
+  assert(/days: FORECAST_DAYS/.test(app), '页面没有按 5 天输出');
+  assert(/TXT\.now/.test(app) && /TXT\.daytime/.test(app), '缺少现在/白天文案');
   assert(/\$\('notes-open'\)/.test(app) && /showModal/.test(app), '缺少出钓指数说明弹窗');
   assert(/\$\('notes-close'\)/.test(app), '缺少说明弹窗关闭');
   assert(/renderFullPage/.test(app) && /html2canvas/.test(app), '缺少整页截图');

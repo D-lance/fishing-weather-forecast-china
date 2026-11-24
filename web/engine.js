@@ -1,6 +1,6 @@
 // 今日鱼情 · 评分引擎（纯函数，不碰 DOM；浏览器 <script type="module"> 与 Node 都能 import）
 //
-// 唯一口径：docs/model.md（鱼情模型 v0.5）+ docs/impl-notes.md。
+// 唯一口径：docs/model.md（鱼情模型 v0.7）+ docs/impl-notes.md。
 // 公式、权重、鱼种表、输出结构全部按该文件实现；Python 版（外部 skill 的 scripts/）是回归基准，
 // 两端对同一份 fixture 算出的分数差应 ≤ 1。改公式先改 model.md，再两端一起改。
 //
@@ -19,12 +19,19 @@ export const SHADOW_MODEL_VERSION = '0.6-shadow';
 // ───────────────────────── 数据源（§1） ─────────────────────────
 const HOURLY = 'temperature_2m,relative_humidity_2m,pressure_msl,surface_pressure,cloud_cover,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
 const DAILY = 'sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum';
+const CURRENT = 'temperature_2m,relative_humidity_2m,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m';
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
-// forecast_days=8：热季会把 d+1 00:00–02:00 算进最后一天，必须多要一天才能拿到那几个小时；
-// 网页端用 localToday() 把“今天”传给 computeForecast，避免把多出来的第 8 天显示出来。
-export function forecastUrl(lat, lon) {
-  return `https://api.open-meteo.com/v1/forecast?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=7&forecast_days=8&wind_speed_unit=ms&hourly=${HOURLY}&daily=${DAILY}`;
+// CMA 主源：中国气象局 GRAPES 全球模型；best_match 只补它缺的字段/天数。
+// 网页显示 5 天，但请求 6 个预报日：热季最后一天需要 d+1 00–02 点。
+export const PRIMARY_FORECAST_MODEL = 'cma_grapes_global';
+export const FALLBACK_FORECAST_MODEL = 'best_match';
+export const FORECAST_DAYS = 5;
+export function forecastUrl(lat, lon, opts = {}) {
+  const model = opts.model || PRIMARY_FORECAST_MODEL;
+  const forecastDays = opts.forecastDays ?? FORECAST_DAYS + 1;
+  const current = opts.current === false ? '' : `&current=${CURRENT}`;
+  return `https://api.open-meteo.com/v1/forecast?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=7&forecast_days=${forecastDays}&wind_speed_unit=ms&hourly=${HOURLY}&daily=${DAILY}${current}&models=${model}`;
 }
 export function marineUrl(lat, lon) {
   return `https://marine-api.open-meteo.com/v1/marine?latitude=${r4(lat)}&longitude=${r4(lon)}&timezone=auto&past_days=1&forecast_days=8&hourly=wave_height,wave_period,sea_surface_temperature,sea_level_height_msl,ocean_current_velocity,ocean_current_direction`;
@@ -740,12 +747,12 @@ const SUB_KEYS = Object.keys(WEIGHTS);
 // ───────────────────────── 主函数 ─────────────────────────
 /**
  * @param {object} o
- * @param {object} o.forecast   Open-Meteo forecast 原始响应（past_days=7, forecast_days=8）
+ * @param {object} o.forecast   Open-Meteo forecast 原始/合并响应（past_days=7, forecast_days=6）
  * @param {object} [o.marine]   Open-Meteo marine 原始响应，或 null
  * @param {object} [o.flood]    Open-Meteo flood 原始响应，或 null
  * @param {object} [o.oxygen]   城市平均实测溶解氧 { value, unit, count, time, source }；只作用于第一个显示日
  * @param {string} [o.style]    'taiwan' 时用台钓粉饵/虾建议；不传则用通用饵料/路亚建议
- * @param {string} [o.model]    '0.6' 时计算影子模型（不改 v0.5 分数）；默认 v0.5
+ * @param {string} [o.model]    '0.6' 时计算影子模型，'0.5' 时算旧模型；默认 v0.7
  * @param {string} [o.species]  鱼种 key，默认 crucian
  * @param {string} [o.water]    reservoir|lake|river|pond|sea|unknown
  * @param {string} [o.waterSource] osm|user|default

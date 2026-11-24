@@ -23,14 +23,14 @@ const render = (svg, width) => Buffer.from(new Resvg(svg, { fitTo: { mode: 'widt
 const C = { bg: '#f7f6f3', ink: '#1c1917', muted: '#78716c', dim: '#a8a29e', line: '#e7e5e4', brand: '#0f766e', soft: '#e6f4f1', lv: ['#15803d', '#4d7c0f', '#b45309', '#c2410c', '#b91c1c'] };
 const SANS = "'Microsoft YaHei','Microsoft YaHei UI','Segoe UI',sans-serif";
 
-// 右侧示意：7 天分数柱（示意图，不是真实预报）
-const demo = [{ d: '周三', s: 86 }, { d: '周四', s: 72 }, { d: '周五', s: 58 }, { d: '周六', s: 91 }, { d: '周日', s: 67 }, { d: '周一', s: 33 }, { d: '周二', s: 78 }];
+// 右侧示意：5 天分数柱（示意图，不是真实预报）
+const demo = [{ d: '周三', s: 86 }, { d: '周四', s: 72 }, { d: '周五', s: 58 }, { d: '周六', s: 91 }, { d: '周日', s: 67 }];
 const lvl = (s) => (s >= 80 ? 0 : s >= 65 ? 1 : s >= 50 ? 2 : s >= 35 ? 3 : 4);
 const bars = demo.map((x, i) => {
-  const bx = 736 + i * 50, h = x.s * 2.1, by = 392 - h;
-  return `<rect x="${bx}" y="${by}" width="34" height="${h}" rx="6" fill="${C.lv[lvl(x.s)]}"/>
-<text x="${bx + 17}" y="${by - 8}" text-anchor="middle" font-family="${SANS}" font-weight="700" font-size="17" fill="${C.ink}">${x.s}</text>
-<text x="${bx + 17}" y="418" text-anchor="middle" font-family="${SANS}" font-size="15" fill="${C.muted}">${x.d}</text>`;
+  const bx = 736 + i * 70, h = x.s * 2.1, by = 392 - h;
+  return `<rect x="${bx}" y="${by}" width="48" height="${h}" rx="6" fill="${C.lv[lvl(x.s)]}"/>
+<text x="${bx + 24}" y="${by - 8}" text-anchor="middle" font-family="${SANS}" font-weight="700" font-size="17" fill="${C.ink}">${x.s}</text>
+<text x="${bx + 24}" y="418" text-anchor="middle" font-family="${SANS}" font-size="15" fill="${C.muted}">${x.d}</text>`;
 }).join('\n');
 
 const FISH = (x, y, s, fill, eye) => `<g transform="translate(${x},${y}) scale(${s})"><path d="M5 16c4-6.5 12-6.5 16.5 0C17 22.5 9 22.5 5 16z" fill="${fill}"/><path d="M21 16l6-5v10z" fill="${fill}"/><circle cx="10" cy="15" r="1.4" fill="${eye}"/></g>`;
@@ -47,14 +47,14 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" v
 ${FISH(96, 70, 1.75, '#fff', C.brand)}
 <text x="170" y="112" font-family="${SANS}" font-size="22" letter-spacing="3" fill="${C.brand}">FISH.SATLOOT.COM</text>
 <text x="94" y="228" font-family="${SANS}" font-weight="700" font-size="92" fill="${C.ink}">今日鱼情</text>
-<text x="96" y="296" font-family="${SANS}" font-size="32" fill="${C.ink}">未来 7 天出钓评分 · 最佳时段</text>
+<text x="96" y="296" font-family="${SANS}" font-size="32" fill="${C.ink}">未来 5 天出钓评分 · 最佳时段</text>
 <text x="96" y="350" font-family="${SANS}" font-size="26" fill="${C.muted}">按气温、气压、风、云雨、日月与水域打分</text>
 <text x="96" y="390" font-family="${SANS}" font-size="26" fill="${C.muted}">附钓位、水层、饵料建议和雷暴大风提示</text>
 <rect x="96" y="428" width="300" height="50" rx="25" fill="${C.soft}" stroke="#b7e0d8"/>
 <text x="246" y="461" text-anchor="middle" font-family="${SANS}" font-weight="700" font-size="21" fill="${C.brand}">免费 · 免注册 · 手机好用</text>
 <rect x="704" y="128" width="420" height="330" rx="22" fill="#1c1917" opacity=".12" filter="url(#sh)"/>
 <rect x="700" y="118" width="420" height="330" rx="22" fill="#ffffff" stroke="${C.line}"/>
-<text x="736" y="160" font-family="${SANS}" font-weight="700" font-size="21" fill="${C.ink}">7 天出钓评分（示意）</text>
+<text x="736" y="160" font-family="${SANS}" font-weight="700" font-size="21" fill="${C.ink}">5 天出钓评分（示意）</text>
 <line x1="736" y1="392" x2="1086" y2="392" stroke="${C.line}"/>
 ${bars}
 <text x="600" y="604" text-anchor="middle" font-family="${SANS}" font-size="17" fill="${C.muted}">经验模型，未经鱼获校准 · 出钓请遵守当地禁渔期</text>

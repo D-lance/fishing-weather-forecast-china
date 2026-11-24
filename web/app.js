@@ -4,10 +4,12 @@
 import {
   computeForecast, forecastUrl, marineUrl, floodUrl, localToday, geocodeUrl, OVERPASS_MIRRORS, overpassQuery,
   classifyWater, marineAvailable, SPECIES, WATER_TYPES, WEIGHTS,
+  PRIMARY_FORECAST_MODEL, FALLBACK_FORECAST_MODEL, FORECAST_DAYS,
 } from './engine.js';
 import { wgs84ToGcj02, gcj02ToWgs84, snapToGeom, geomSpanM, distM } from './coord.js';
 import { bestByDate, mergeAlerts, dayFlagKeys, allOptimal } from './rank.js';
-import { summarizeDay } from './weather.js';
+import { summarizeDay, mergeForecast } from './weather.js';
+import { cnKind, cnWindParts } from './cnweather.js';
 
 // Nominatim 使用规范建议带联系邮箱（浏览器改不了 User-Agent，会自动带 Referer）。上线前填站点联系邮箱；留空则不带。
 const NOMINATIM_EMAIL = 'admin@satloot.com';
@@ -68,7 +70,8 @@ const TXT = {
     allOptimalTitle: (n) => `${n} 种都适温`,
     allOptimal: (n) => `${n} 种都适温，按你常钓的鱼和饵准备`,
     allOptimalShort: '都适温',
-    wxPlace: '鹰潭',
+    wxPlace: '鹰潭 · 信江', now: '现在', daytime: '白天',
+    wxSourceCn: '天气/温度：中国天气网 · 降水/湿度：Open-Meteo', wxSourceOm: '天气：Open-Meteo',
     weather: { clear: '晴', mainlyClear: '晴间多云', partlyCloudy: '多云', overcast: '阴', fog: '雾', drizzle: '毛毛雨', rain: '雨', heavyRain: '大雨', snow: '雪', thunder: '雷雨', unknown: '—' },
     dirs: ['北', '东北', '东', '东南', '南', '西南', '西', '西北'],
     tempRange: (lo, hi) => `${lo}–${hi}℃`,
@@ -127,7 +130,8 @@ const TXT = {
     allOptimalTitle: (n) => `All ${n} in range`,
     allOptimal: (n) => `All ${n} are in range; choose by your usual target and bait`,
     allOptimalShort: 'In range',
-    wxPlace: 'Yingtan',
+    wxPlace: 'Yingtan · Xinjiang', now: 'Now', daytime: 'Daytime',
+    wxSourceCn: 'Weather/temperature: China Weather · rain/humidity: Open-Meteo', wxSourceOm: 'Weather: Open-Meteo',
     weather: { clear: 'Clear', mainlyClear: 'Mostly clear', partlyCloudy: 'Partly cloudy', overcast: 'Overcast', fog: 'Fog', drizzle: 'Drizzle', rain: 'Rain', heavyRain: 'Heavy rain', snow: 'Snow', thunder: 'Thunderstorm', unknown: '—' },
     dirs: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'],
     tempRange: (lo, hi) => `${lo}–${hi}°C`,
@@ -173,6 +177,7 @@ const S = {
   today: null,          // 取到 forecast 时冻结的“当地今天”，跨午夜重算也不漂移
   city: null,           // 反向地名得到的城市，用于城市平均溶解氧
   oxygenData: null,     // /data/oxygen.json（城市平均溶解氧）
+  weatherCn: null,      // /data/weather-cn.json（中国天气网口径，定时脚本生成）
   token: 0,
   basemap: 'amap',
 };
@@ -552,7 +557,8 @@ async function choosePlace(lat, lon, name, opts = {}) {
   drawOverlays();
   const marineP = getJSON(marineUrl(S.lat, S.lon), {}, 15000).catch(() => null);
   const floodP = getJSON(floodUrl(S.lat, S.lon), {}, 15000).catch(() => null);
-  const fcP = getJSON(forecastUrl(S.lat, S.lon), {}, 20000);
+  const fcPrimaryP = getJSON(forecastUrl(S.lat, S.lon, { model: PRIMARY_FORECAST_MODEL }), {}, 20000).catch(() => null);
+  const fcFallbackP = getJSON(forecastUrl(S.lat, S.lon, { model: FALLBACK_FORECAST_MODEL }), {}, 20000).catch(() => null);
   if (YINGTAN_ONLY) {
     if (S.name) saveRecent();
   } else {
@@ -560,8 +566,10 @@ async function choosePlace(lat, lon, name, opts = {}) {
     if (S.name) saveRecent();
   }
   try {
-    const [fc, marine, flood] = await Promise.all([fcP, marineP, floodP]);
+    const [primary, fallback, marine, flood] = await Promise.all([fcPrimaryP, fcFallbackP, marineP, floodP]);
     if (token !== S.token) return;
+    const fc = mergeForecast(primary, fallback);
+    if (!fc) throw new Error('no forecast');
     S.fc = fc; S.marine = marine; S.flood = flood;
     S.today = localToday(fc);
     recompute();
@@ -607,6 +615,21 @@ async function loadOxygenData() {
     recompute();
   } catch { /* 没有数据就用 v0.4 代理 */ }
 }
+const CN_TTL_MS = 12 * 3600 * 1000;
+function cnFresh() {
+  const t = Date.parse(S.weatherCn?.fetched_at || '');
+  return Number.isFinite(t) && Date.now() - t <= CN_TTL_MS;
+}
+async function loadWeatherCnData() {
+  try {
+    const r = await fetch('/data/weather-cn.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!Array.isArray(j?.days)) return;
+    S.weatherCn = j;
+    if (S.days && S.days[S.sel]) renderWeather(S.days[S.sel]);
+  } catch { /* 没有数据/过期就回退 Open-Meteo */ }
+}
 
 function recompute() {
   if (!S.fc) return;
@@ -614,7 +637,7 @@ function recompute() {
   const opts = {
     forecast: S.fc, marine: S.marine, flood: S.flood, oxygen: currentOxygen(),
     water, waterSource: src, name: S.name, lang: LANG,
-    now: S.today || localToday(S.fc), style: YINGTAN_ONLY ? 'taiwan' : undefined,
+    now: S.today || localToday(S.fc), days: FORECAST_DAYS, style: YINGTAN_ONLY ? 'taiwan' : undefined,
   };
   const outputs = [];
   for (const key of TARGET_SPECIES) {
@@ -753,14 +776,54 @@ function renderDays() {
 function renderWeather(entry) {
   const el = $('d-weather');
   const w = summarizeDay(S.fc, entry.date);
-  el.hidden = !w;
-  if (!w) { el.innerHTML = ''; return; }
-  const temp = w.tempMin == null || w.tempMax == null ? '—' : TXT.tempRange(fmt(w.tempMin), fmt(w.tempMax));
-  const wind = w.windDir == null || w.windLevel == null ? '—' : TXT.wind(TXT.dirs[w.windDir], w.windLevel);
-  const rain = w.rainProb == null ? '—' : TXT.rainProb(Math.round(w.rainProb));
-  const hum = w.humidity == null ? '—' : TXT.humidity(Math.round(w.humidity));
-  const icon = WX_ICONS[w.kind] || WX_ICONS.unknown;
-  const label = TXT.weather[w.kind] || TXT.weather.unknown;
+  const cn = cnFresh() ? S.weatherCn : null;
+  const cnDay = cn?.days?.find((d) => d.date === entry.date);
+  if (!w && !cnDay) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+
+  const isToday = entry.date === (S.today || (S.fc ? localToday(S.fc) : null));
+  const omWind = w && w.windDir != null && w.windLevel != null ? TXT.wind(TXT.dirs[w.windDir], w.windLevel) : '—';
+  const omRain = w?.rainProb == null ? '—' : TXT.rainProb(Math.round(w.rainProb));
+  const omHum = w?.humidity == null ? '—' : TXT.humidity(Math.round(w.humidity));
+  let kind;
+  let temp;
+  let wind;
+  let rain;
+  let hum;
+  let label;
+  let source;
+
+  if (cnDay) {
+    const cur = isToday ? cn.current : null;
+    const text = cur?.text || cnDay.text || '';
+    kind = cnKind(text);
+    if (kind === 'unknown' && w?.kind) kind = w.kind;
+    const showNow = isToday && cur?.temp != null;
+    const range = cnDay.low == null || cnDay.high == null ? '—' : TXT.tempRange(fmt(cnDay.low), fmt(cnDay.high));
+    temp = showNow
+      ? (range === '—' ? `${fmt(cur.temp)}℃` : `${fmt(cur.temp)}℃（${fmt(cnDay.low)}–${fmt(cnDay.high)}℃）`)
+      : range;
+    const h = cnDay.hourly?.find((x) => x.time === '14:00') || cnDay.hourly?.[0];
+    const wp = cnWindParts(cur?.windDir || h?.windDir, cur?.windLevel || h?.windLevel);
+    wind = wp.dir != null && wp.level != null ? TXT.wind(TXT.dirs[wp.dir], wp.level) : omWind;
+    rain = omRain;
+    hum = cur?.humidity != null ? TXT.humidity(Math.round(cur.humidity)) : omHum;
+    label = `${showNow ? TXT.now : TXT.daytime} ${TXT.weather[kind] || TXT.weather.unknown}`;
+    source = TXT.wxSourceCn;
+  } else {
+    kind = w.kind;
+    const range = w.tempMin == null || w.tempMax == null ? '—' : TXT.tempRange(fmt(w.tempMin), fmt(w.tempMax));
+    temp = w.now && w.temp != null
+      ? (range === '—' ? `${fmt(w.temp)}℃` : `${fmt(w.temp)}℃（${fmt(w.tempMin)}–${fmt(w.tempMax)}℃）`)
+      : range;
+    wind = omWind;
+    rain = omRain;
+    hum = omHum;
+    label = `${w.now ? TXT.now : TXT.daytime} ${TXT.weather[w.kind] || TXT.weather.unknown}`;
+    source = TXT.wxSourceOm;
+  }
+
+  const icon = WX_ICONS[kind] || WX_ICONS.unknown;
   const lb = dateLabel(entry.date, S.sel);
   el.innerHTML = `<div class="wx-main">
       <span class="wx-place">${esc(TXT.wxPlace)} · ${esc(lb.rel)} ${esc(lb.short)}</span>
@@ -768,7 +831,8 @@ function renderWeather(entry) {
       <span class="wx-kind">${esc(label)}</span>
       <span class="wx-temp">${esc(temp)}</span>
     </div>
-    <div class="wx-sub">${esc([wind, rain, hum].join(TXT.sep))}</div>`;
+    <div class="wx-sub">${esc([wind, rain, hum].join(TXT.sep))}</div>
+    <div class="wx-source">${esc(source)}</div>`;
 }
 
 function renderBest(entry, focus) {
@@ -1225,6 +1289,7 @@ let rT = 0;
 window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => drawChart(), 120); });
 readUrl();
 loadOxygenData();
+loadWeatherCnData();
 if (YINGTAN_ONLY && S.lat == null) {
   S.wUser = 'river';
   $('w').value = 'river';
